@@ -1,76 +1,161 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
 import { extname } from 'path';
 
 @Injectable()
 export class S3UploadService {
   private readonly logger = new Logger(S3UploadService.name);
-  private readonly s3: S3Client;
+
+  private readonly supabase: SupabaseClient;
   private readonly bucket: string;
-  private readonly region: string;
+  private readonly supabaseUrl: string;
 
   constructor() {
-    this.region = process.env.AWS_REGION ?? 'ap-southeast-1';
-    this.bucket = process.env.AWS_BUCKET_NAME ?? '';
-    this.s3 = new S3Client({
-      region: this.region,
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? '',
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '',
+    this.supabaseUrl = process.env.SUPABASE_URL ?? '';
+    this.bucket = process.env.SUPABASE_STORAGE_BUCKET ?? 'smart-hospital';
+
+    // Ưu tiên secret key mới, hỗ trợ thêm service_role key cũ
+    const secretKey =
+      process.env.SUPABASE_SECRET_KEY ??
+      process.env.SUPABASE_SERVICE_ROLE_KEY ??
+      '';
+
+    if (!this.supabaseUrl) {
+      throw new Error('Thiếu biến môi trường SUPABASE_URL');
+    }
+
+    if (!secretKey) {
+      throw new Error(
+        'Thiếu SUPABASE_SECRET_KEY hoặc SUPABASE_SERVICE_ROLE_KEY',
+      );
+    }
+
+    this.supabase = createClient(this.supabaseUrl, secretKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
       },
     });
   }
 
-  /** Upload buffer lên S3, trả về public URL */
-  async upload(
-    file: Express.Multer.File,
-    prefix = 'uploads',
-  ): Promise<string> {
-    let ext = extname(file.originalname).toLowerCase();
-    if (!ext || ext.length > 6) ext = this.extFromMime(file.mimetype);
-    const key = `${prefix}/${randomUUID()}${ext}`;
+  /**
+   * Upload file lên Supabase Storage.
+   * Trả về public URL để lưu vào database.
+   */
+  async upload(file: Express.Multer.File, prefix = 'uploads'): Promise<string> {
+    let extension = extname(file.originalname).toLowerCase();
 
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-      }),
-    );
+    if (!extension || extension.length > 6) {
+      extension = this.extFromMime(file.mimetype);
+    }
 
-    return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
+    const objectPath = `${prefix}/${randomUUID()}${extension}`;
+
+    const { error } = await this.supabase.storage
+      .from(this.bucket)
+      .upload(objectPath, file.buffer, {
+        contentType: file.mimetype,
+        cacheControl: '3600',
+        upsert: false,
+      });
+
+    if (error) {
+      this.logger.error(`Upload Supabase Storage thất bại: ${error.message}`);
+
+      throw new InternalServerErrorException(
+        `Không thể tải ảnh lên hệ thống: ${error.message}`,
+      );
+    }
+
+    const { data } = this.supabase.storage
+      .from(this.bucket)
+      .getPublicUrl(objectPath);
+
+    if (!data.publicUrl) {
+      throw new InternalServerErrorException(
+        'Không thể tạo public URL cho ảnh',
+      );
+    }
+
+    return data.publicUrl;
   }
 
-  /** Xóa object trên S3 theo URL đầy đủ hoặc key */
+  /**
+   * Xóa file trên Supabase Storage bằng public URL hoặc object path.
+   */
   async delete(urlOrKey: string): Promise<void> {
     try {
-      const key = this.extractKey(urlOrKey);
-      if (!key) return;
-      await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
-    } catch (e) {
-      this.logger.warn(`Không xóa được S3 object ${urlOrKey}: ${(e as Error).message}`);
+      const objectPath = this.extractObjectPath(urlOrKey);
+
+      if (!objectPath) {
+        return;
+      }
+
+      const { error } = await this.supabase.storage
+        .from(this.bucket)
+        .remove([objectPath]);
+
+      if (error) {
+        this.logger.warn(`Không xóa được file ${objectPath}: ${error.message}`);
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Lỗi không xác định';
+
+      this.logger.warn(`Không xóa được file ${urlOrKey}: ${message}`);
     }
   }
 
-  private extractKey(urlOrKey: string): string | null {
+  private extractObjectPath(urlOrKey: string): string | null {
+    if (!urlOrKey) {
+      return null;
+    }
+
     try {
       const url = new URL(urlOrKey);
-      // pathname bắt đầu bằng '/', bỏ dấu '/' đầu
-      return url.pathname.replace(/^\//, '');
+
+      // Không cố xóa URL cũ thuộc AWS hoặc dịch vụ khác
+      if (!url.href.startsWith(this.supabaseUrl)) {
+        return null;
+      }
+
+      const marker = `/storage/v1/object/public/${this.bucket}/`;
+
+      const markerIndex = url.pathname.indexOf(marker);
+
+      if (markerIndex === -1) {
+        return null;
+      }
+
+      const encodedPath = url.pathname.slice(markerIndex + marker.length);
+
+      return decodeURIComponent(encodedPath);
     } catch {
-      // không phải URL → coi là key trực tiếp
-      return urlOrKey || null;
+      // Không phải URL thì coi là object path trực tiếp
+      return urlOrKey;
     }
   }
 
   private extFromMime(mimetype: string): string {
     switch (mimetype) {
-      case 'image/png': return '.png';
-      case 'image/webp': return '.webp';
-      case 'image/gif': return '.gif';
-      default: return '.jpg';
+      case 'image/png':
+        return '.png';
+
+      case 'image/webp':
+        return '.webp';
+
+      case 'image/gif':
+        return '.gif';
+
+      case 'image/jpeg':
+      case 'image/jpg':
+      default:
+        return '.jpg';
     }
   }
 }
