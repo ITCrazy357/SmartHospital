@@ -1,6 +1,8 @@
 -- =============================================================================
 -- SmartHospital — DATABASE DESIGN (generated from sh.server/src/models)
 -- =============================================================================
+-- REFERENCE SNAPSHOT ONLY. Install/upgrade using npm run db:migrate.
+-- Versioned migrations (000_baseline.sql and subsequent files) are authoritative.
 -- Mục đích:
 --   - Import vào tool để generate ERD / database diagram
 --   - Đồng bộ theo TypeORM entities trong `sh.server/src/models`

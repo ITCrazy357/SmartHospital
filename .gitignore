@@ -1,0 +1,4 @@
+# Database exports contain private clinical data; keep backups outside the checkout.
+*.dump
+*.backup
+*.sql.gz

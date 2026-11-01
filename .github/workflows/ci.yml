@@ -1,0 +1,60 @@
+name: SmartHospital checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: sh_test
+          POSTGRES_PASSWORD: local-ci-only-password
+          POSTGRES_DB: smarthospital_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sh_test -d smarthospital_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: sh.server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: sh.server/package-lock.json
+      - run: npm ci
+      - run: npm run test:scripts
+      - run: npm run test:ci
+      - run: npm run test:integration
+        env:
+          TEST_DATABASE_URL: postgresql://sh_test:local-ci-only-password@localhost:5432/smarthospital_test
+      - run: npm run build
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sh.client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: sh.client/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

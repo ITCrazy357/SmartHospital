@@ -1,6 +1,6 @@
 # Hướng dẫn chạy SmartHospital trên máy local
 
-Đây là **dự án tốt nghiệp** — hướng dẫn chỉ đủ để chạy **dev** trên máy: backend + frontend + PostgreSQL (Docker).
+Hướng dẫn chạy **dev** trên máy: backend + frontend + PostgreSQL (Docker). Khi chuẩn bị thử nghiệm tại phòng khám, làm theo [quy trình vận hành, migration và khôi phục](docs/OPERATIONS.md); dùng dữ liệu giả cho tới khi các điều kiện nghiệm thu được đáp ứng.
 
 Dành cho người nhận source (đã xóa `node_modules`, `dist`).
 
@@ -10,7 +10,7 @@ Dành cho người nhận source (đã xóa `node_modules`, `dist`).
 
 | Yêu cầu | Ghi chú |
 |--------|---------|
-| **Node.js + npm** | Cài Node ổn định trên máy (npm đi kèm). Miễn `npm install` chạy được. |
+| **Node.js + npm** | Node.js **22**, npm đi kèm. |
 | **Docker Desktop** | Bật Docker trước khi chạy database. Kiểm tra: `docker version` |
 
 ### `npm install` bị lỗi (peer dependency / ERESOLVE)?
@@ -62,7 +62,7 @@ Mặc định trong `.env.example` đã khớp Docker. Quan trọng:
 |------|---------|
 | `PORT` | API — thường **3000** |
 | `POSTGRES_*` | Khớp `docker-compose.yml` |
-| `JWT_SECRET` | Chuỗi ký JWT (dev có thể giữ mặc định) |
+| `JWT_SECRET` | Chuỗi ký JWT ngẫu nhiên riêng, bắt buộc cấu hình khi triển khai |
 | `CLIENT_APP_URL` | Dev: `http://localhost:5431` |
 
 SMTP, PayOS, OpenAI là **tùy chọn** — xem `.env.example`.
@@ -86,7 +86,7 @@ VITE_API_URL=http://localhost:3000
 
 ## 4. Database (Docker + PostgreSQL)
 
-NestJS **không** tự tạo bảng (`synchronize: false`). Sau khi container chạy, **import schema một lần**.
+NestJS **không** tự tạo bảng (`synchronize: false`). Sau khi container chạy và đã cài dependencies backend, **chạy migration version hóa**.
 
 ### Khởi động Postgres
 
@@ -97,21 +97,15 @@ docker compose up -d
 
 Đợi vài giây. Kiểm tra: `docker ps` — container **`sh-postgres`**.
 
-### Nạp schema
-
-**macOS / Linux:**
+### Tạo/nâng cấp schema — mọi hệ điều hành
 
 ```bash
 cd sh.server
-docker exec -i sh-postgres psql -U sh_user -d smart_hospital < schema/smart-hospital-design.sql
+npm ci
+npm run db:migrate
 ```
 
-**Windows (PowerShell):**
-
-```powershell
-cd sh.server
-Get-Content .\schema\smart-hospital-design.sql | docker exec -i sh-postgres psql -U sh_user -d smart_hospital
-```
+Lệnh dùng POSTGRES_* trong `.env`, áp dụng tuần tự `migrations/*.sql` và lưu lịch sử/checksum. Với DB có sẵn dữ liệu, backup và thử nâng cấp trên bản sao trước. Không dùng file thiết kế ERD để nâng cấp DB cũ. Xem [OPERATIONS.md](docs/OPERATIONS.md).
 
 ---
 
@@ -147,7 +141,7 @@ Web: **http://localhost:5431**
 
 1. BE: **http://localhost:3000**
 2. FE: **http://localhost:5431**
-3. Thử đăng ký / đăng nhập sau khi đã import schema.
+3. Thử đăng ký / đăng nhập sau khi migration hoàn tất.
 
 ---
 
@@ -155,7 +149,7 @@ Web: **http://localhost:5431**
 
 1. Cài Node + Docker.  
 2. Copy `.env.example` → `.env` trong **`sh.server`** và **`sh.client`**, chỉnh `VITE_API_URL` nếu cần.  
-3. `cd sh.server` → `docker compose up -d` → import **`schema/smart-hospital-design.sql`**.  
+3. `cd sh.server` → `docker compose up -d` → `npm ci` → `npm run db:migrate`.
 4. `npm install` (hoặc `--legacy-peer-deps`) → `npm run dev` trong **sh.server**.  
 5. `npm install` (hoặc `--legacy-peer-deps`) → `npm run dev` trong **sh.client**.  
 6. Mở **http://localhost:5431**.
