@@ -151,9 +151,10 @@ export class AdminService {
   async setDoctorLocked(doctorId: string, locked: boolean): Promise<{ message: string }> {
     const user = await this.userRepo.findOne({ where: { id: doctorId, role: 'doctor' } });
     if (!user) throw new NotFoundException('Không tìm thấy bác sĩ');
-    user.isLocked = Boolean(locked);
-    await this.userRepo.save(user);
-    return { message: user.isLocked ? 'Đã khóa tài khoản bác sĩ.' : 'Đã mở khóa tài khoản bác sĩ.' };
+    await this.userRepo.update({ id: doctorId, role: 'doctor' }, {
+      isLocked: Boolean(locked), tokenVersion: () => 'token_version + 1',
+    });
+    return { message: locked ? 'Đã khóa tài khoản bác sĩ.' : 'Đã mở khóa tài khoản bác sĩ.' };
   }
 
   async updateDoctor(
@@ -168,8 +169,9 @@ export class AdminService {
       university?: string | null;
     },
     avatarUrl?: string | null,
+    repo: Repository<UserEntity> = this.userRepo,
   ): Promise<UserPublic> {
-    const user = await this.userRepo.findOne({ where: { id: doctorId, role: 'doctor' } });
+    const user = await repo.findOne({ where: { id: doctorId, role: 'doctor' } });
     if (!user) {
       throw new NotFoundException('Không tìm thấy bác sĩ');
     }
@@ -184,7 +186,7 @@ export class AdminService {
       const emailNorm = dto.email.trim().toLowerCase();
       if (!emailNorm) throw new BadRequestException('Email không hợp lệ');
       if (emailNorm !== user.email) {
-        const taken = await this.userRepo.findOne({ where: { email: emailNorm } });
+        const taken = await repo.findOne({ where: { email: emailNorm } });
         if (taken) throw new ConflictException('Email đã được sử dụng');
         user.email = emailNorm;
       }
@@ -199,7 +201,7 @@ export class AdminService {
         if (!phoneNorm) {
           throw new BadRequestException({ errors: { phone: 'Số điện thoại không hợp lệ' } });
         }
-        const phoneTaken = await this.userRepo.findOne({ where: { phone: phoneNorm } });
+        const phoneTaken = await repo.findOne({ where: { phone: phoneNorm } });
         if (phoneTaken && phoneTaken.id !== user.id) {
           throw new ConflictException('Tài khoản đã tồn tại');
         }
@@ -226,7 +228,7 @@ export class AdminService {
       user.avatarUrl = avatarUrl.trim() || null;
     }
 
-    const saved = await this.userRepo.save(user);
+    const saved = await repo.save(user);
     return this.toPublic(saved);
   }
 
@@ -254,8 +256,11 @@ export class AdminService {
     if (!user) {
       throw new NotFoundException('Không tìm thấy tài khoản');
     }
-    user.passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-    await this.userRepo.save(user);
+    await this.userRepo.update({ id: user.id }, {
+      passwordHash: await bcrypt.hash(password, SALT_ROUNDS),
+      tokenVersion: () => 'token_version + 1',
+    });
+    await this.dataSource.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [user.id]);
     return { message: 'Đã cập nhật mật khẩu.' };
   }
 
@@ -266,7 +271,7 @@ export class AdminService {
       password: string;
       fullName: string;
       phone?: string | null;
-      role: 'user' | 'admin';
+      role: 'user' | 'admin' | 'receptionist' | 'cashier';
     },
   ): Promise<UserPublic> {
     const pwdErr = validateStrongPassword(dto.password);
@@ -319,119 +324,105 @@ export class AdminService {
       fullName?: string;
       email?: string;
       phone?: string | null;
-      role?: 'user' | 'admin';
+      role?: 'user' | 'admin' | 'receptionist' | 'cashier';
       departmentId?: string | null;
       bio?: string | null;
       experienceYears?: number | null;
       university?: string | null;
     },
   ): Promise<UserPublic> {
-    const user = await this.userRepo.findOne({ where: { id: targetId } });
-    if (!user) {
-      throw new NotFoundException('Không tìm thấy người dùng');
-    }
+    return this.dataSource.transaction(async (em) => {
+      await em.query("SELECT pg_advisory_xact_lock(hashtext('smart-hospital:admin-access'))");
+      const repo = em.getRepository(UserEntity);
+      const user = await repo.findOne({ where: { id: targetId }, lock: { mode: 'pessimistic_write' } });
+      if (!user) {
+        throw new NotFoundException('Không tìm thấy người dùng');
+      }
 
-    if (user.role === 'doctor') {
+      if (user.role === 'doctor') {
+        if (body.role !== undefined) {
+          throw new BadRequestException('Không đổi vai trò bác sĩ qua API này.');
+        }
+        return this.updateDoctor(targetId, {
+          fullName: body.fullName,
+          email: body.email,
+          phone: body.phone,
+          departmentId: body.departmentId,
+          bio: body.bio,
+          experienceYears: body.experienceYears,
+          university: body.university,
+        }, undefined, repo);
+      }
+
       if (body.role !== undefined) {
-        throw new BadRequestException('Không đổi vai trò bác sĩ qua API này.');
+        if (!['user', 'admin', 'receptionist', 'cashier'].includes(body.role)) {
+          throw new BadRequestException('Vai trò không hợp lệ');
+        }
+        if (user.role === 'admin' && !user.isLocked && body.role !== 'admin') {
+          const adminCount = await repo.count({ where: { role: 'admin', isLocked: false } });
+          if (adminCount <= 1) {
+            throw new BadRequestException('Phải có ít nhất một tài khoản admin.');
+          }
+        }
+        user.role = body.role;
       }
-      return this.updateDoctor(targetId, {
-        fullName: body.fullName,
-        email: body.email,
-        phone: body.phone,
-        departmentId: body.departmentId,
-        bio: body.bio,
-        experienceYears: body.experienceYears,
-        university: body.university,
-      });
-    }
 
-    if (body.role !== undefined) {
-      if (body.role !== 'user' && body.role !== 'admin') {
-        throw new BadRequestException('Vai trò chỉ có thể là user hoặc admin');
+      if (body.fullName !== undefined) {
+        const n = body.fullName.trim();
+        if (!n) throw new BadRequestException('Họ tên không được để trống');
+        user.fullName = n;
       }
-      if (user.role === 'admin' && body.role === 'user') {
-        const adminCount = await this.userRepo.count({ where: { role: 'admin' } });
-        if (adminCount <= 1) {
-          throw new BadRequestException('Phải có ít nhất một tài khoản admin.');
+      if (body.email !== undefined) {
+        const emailNorm = body.email.trim().toLowerCase();
+        if (!emailNorm) throw new BadRequestException('Email không hợp lệ');
+        if (emailNorm !== user.email) {
+          const taken = await repo.findOne({ where: { email: emailNorm } });
+          if (taken) throw new ConflictException('Email đã được sử dụng');
+          user.email = emailNorm;
         }
       }
-      user.role = body.role;
-    }
-
-    if (body.fullName !== undefined) {
-      const n = body.fullName.trim();
-      if (!n) throw new BadRequestException('Họ tên không được để trống');
-      user.fullName = n;
-    }
-    if (body.email !== undefined) {
-      const emailNorm = body.email.trim().toLowerCase();
-      if (!emailNorm) throw new BadRequestException('Email không hợp lệ');
-      if (emailNorm !== user.email) {
-        const taken = await this.userRepo.findOne({ where: { email: emailNorm } });
-        if (taken) throw new ConflictException('Email đã được sử dụng');
-        user.email = emailNorm;
-      }
-    }
-    if (body.phone !== undefined) {
-      const raw = body.phone === null || body.phone === undefined ? '' : String(body.phone).trim();
-      if (!raw) {
-        user.phone = null;
-      } else {
-        const p = normalizeVnPhone(raw);
-        if (!p) {
-          throw new BadRequestException({ errors: { phone: 'Số điện thoại không hợp lệ' } });
+      if (body.phone !== undefined) {
+        const raw = body.phone === null || body.phone === undefined ? '' : String(body.phone).trim();
+        if (!raw) {
+          user.phone = null;
+        } else {
+          const p = normalizeVnPhone(raw);
+          if (!p) {
+            throw new BadRequestException({ errors: { phone: 'Số điện thoại không hợp lệ' } });
+          }
+          const phoneTaken = await repo.findOne({ where: { phone: p } });
+          if (phoneTaken && phoneTaken.id !== user.id) {
+            throw new ConflictException('Số điện thoại đã được tài khoản khác sử dụng');
+          }
+          user.phone = p;
         }
-        const phoneTaken = await this.userRepo.findOne({ where: { phone: p } });
-        if (phoneTaken && phoneTaken.id !== user.id) {
-          throw new ConflictException('Số điện thoại đã được tài khoản khác sử dụng');
-        }
-        user.phone = p;
       }
-    }
 
-    const saved = await this.userRepo.save(user);
-    return this.toPublic(saved);
+      const saved = await repo.save(user);
+      if (body.role !== undefined) await repo.increment({ id: user.id }, 'tokenVersion', 1);
+      return this.toPublic(saved);
+    });
   }
 
+  /** Preserve medical/financial history: DELETE now deactivates the account. */
   async deleteManagedUser(actorId: string, targetId: string): Promise<{ message: string }> {
-    if (actorId === targetId) {
-      throw new ForbiddenException('Không thể xóa chính tài khoản đang đăng nhập.');
-    }
-    const user = await this.userRepo.findOne({ where: { id: targetId } });
-    if (!user) {
-      throw new NotFoundException('Không tìm thấy người dùng');
-    }
-    if (user.role === 'admin') {
-      const adminCount = await this.userRepo.count({ where: { role: 'admin' } });
-      if (adminCount <= 1) {
-        throw new BadRequestException('Không thể xóa admin cuối cùng.');
-      }
-    }
+    return this.setManagedUserLocked(actorId, targetId, true);
+  }
 
-    if (user.role === 'doctor') {
-      const appointmentCount = await this.appointmentRepo.count({
-        where: { doctorId: targetId },
-      });
-      const recordCount = await this.medicalRecordRepo.count({
-        where: { doctorId: targetId },
-      });
-      if (appointmentCount > 0 || recordCount > 0) {
-        const reasons: string[] = [];
-        if (appointmentCount > 0) {
-          reasons.push(`${appointmentCount} lịch hẹn`);
-        }
-        if (recordCount > 0) {
-          reasons.push(`${recordCount} hồ sơ bệnh án đã lưu`);
-        }
-        throw new BadRequestException(
-          `Không thể xóa bác sĩ đã có ${reasons.join(' hoặc ')}. Xử lý hoặc ẩn dữ liệu trước (liên hệ kỹ thuật nếu cần).`,
-        );
+  async setManagedUserLocked(actorId: string, targetId: string, locked: boolean): Promise<{ message: string }> {
+    if (actorId === targetId && locked) throw new ForbiddenException('Không thể vô hiệu hóa chính tài khoản đang đăng nhập.');
+    return this.dataSource.transaction(async (em) => {
+      // Shared lock serializes disabling admins, preserving one active admin.
+      await em.query("SELECT pg_advisory_xact_lock(hashtext('smart-hospital:admin-access'))");
+      const user = await em.findOne(UserEntity, { where: { id: targetId }, lock: { mode: 'pessimistic_write' } });
+      if (!user) throw new NotFoundException('Không tìm thấy người dùng');
+      if (locked && user.role === 'admin' && !user.isLocked) {
+        const adminCount = await em.count(UserEntity, { where: { role: 'admin', isLocked: false } });
+        if (adminCount <= 1) throw new BadRequestException('Không thể vô hiệu hóa admin hoạt động cuối cùng.');
       }
-    }
-
-    await this.userRepo.remove(user);
-    return { message: 'Đã xóa người dùng.' };
+      await em.update(UserEntity, { id: targetId }, { isLocked: locked, tokenVersion: () => 'token_version + 1' });
+      return { message: locked ? 'Đã vô hiệu hóa tài khoản; hồ sơ và giao dịch được giữ nguyên.' : 'Đã kích hoạt lại tài khoản. Vui lòng đăng nhập lại.' };
+    });
   }
 
   /**

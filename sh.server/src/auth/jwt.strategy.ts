@@ -3,10 +3,12 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
+import { jwtSecret } from './jwt-config';
 
 export interface JwtPayload {
   sub: string;
   email: string;
+  ver?: number;
   iat?: number;
   exp?: number;
 }
@@ -20,12 +22,12 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: config.get<string>('JWT_SECRET') || 'smart-hospital-secret-change-in-production',
+      secretOrKey: jwtSecret(config),
     });
   }
 
   async validate(payload: JwtPayload) {
-    const user = await this.authService.validateUserById(payload.sub);
+    const user = await this.authService.validateUserById(payload.sub, payload.ver);
     if (!user) throw new UnauthorizedException();
     return user;
   }

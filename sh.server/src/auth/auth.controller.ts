@@ -36,8 +36,9 @@ export class AuthController {
   }
 
   @Post('logout')
-  async logout() {
-    return { message: 'Đã đăng xuất' };
+  @UseGuards(JwtAuthGuard)
+  async logout(@CurrentUser() user: UserPublic) {
+    return this.authService.logout(user.id);
   }
 
   @Post('forgot-password')

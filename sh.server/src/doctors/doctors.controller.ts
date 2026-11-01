@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { DoctorsService } from './doctors.service';
 import { isUuid } from '../common/is-uuid';
-import type { UserEntity } from '../models/user.model';
+import type { PublicDoctorDto } from './public-doctor.dto';
 import type { DoctorScheduleEntity } from '../models/doctor-schedule.model';
 import type { AppointmentSlotEntity } from '../models/appointment-slot.model';
 
@@ -20,7 +20,7 @@ export class DoctorsController {
   @Get()
   async findAll(
     @Query('departmentId') departmentId?: string,
-  ): Promise<UserEntity[]> {
+  ): Promise<PublicDoctorDto[]> {
     const raw = departmentId?.trim();
     if (raw && !isUuid(raw)) {
       throw new BadRequestException('departmentId phải là UUID hợp lệ');
@@ -48,7 +48,7 @@ export class DoctorsController {
   @Get(':id')
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<UserEntity> {
+  ): Promise<PublicDoctorDto> {
     const one = await this.doctorsService.findOne(id);
     if (!one) throw new NotFoundException('Doctor not found');
     return one;

@@ -5,7 +5,7 @@
 import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { DepartmentEntity } from './department.model';
 
-export type UserRole = 'user' | 'doctor' | 'admin';
+export type UserRole = 'user' | 'doctor' | 'admin' | 'receptionist' | 'cashier';
 
 /** Pattern giờ khám yêu thích để hỗ trợ AI gợi ý lịch. */
 export interface PreferredTimePattern {
@@ -53,8 +53,12 @@ export class UserEntity {
   @Column({ type: 'varchar', length: 50, nullable: true, unique: true })
   phone: string | null;
 
-  @Column({ name: 'password_hash', type: 'text' })
+  @Column({ name: 'password_hash', type: 'text', select: false })
   passwordHash: string;
+
+  /** Incremented when credentials or account access change; never returned in public DTOs. */
+  @Column({ name: 'token_version', type: 'integer', default: 0, select: false })
+  tokenVersion: number;
 
   @Column({ type: 'varchar', length: 20, default: 'user' })
   role: UserRole;

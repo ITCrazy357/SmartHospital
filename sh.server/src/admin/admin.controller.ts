@@ -44,7 +44,7 @@ export class AdminController {
   }
 
   @Get('users')
-  async getUsers(@Query('role') role?: 'user' | 'doctor' | 'admin'): Promise<UserPublic[]> {
+  async getUsers(@Query('role') role?: 'user' | 'doctor' | 'admin' | 'receptionist' | 'cashier'): Promise<UserPublic[]> {
     return this.adminService.findAllUsers(role);
   }
 
@@ -81,7 +81,7 @@ export class AdminController {
       password?: string;
       fullName?: string;
       phone?: string | null;
-      role?: 'user' | 'admin';
+      role?: 'user' | 'admin' | 'receptionist' | 'cashier';
     },
   ): Promise<UserPublic> {
     const email = body.email?.trim();
@@ -91,8 +91,8 @@ export class AdminController {
     if (!email || !password || !fullName) {
       throw new BadRequestException('Thiếu email, mật khẩu hoặc họ tên');
     }
-    if (role !== 'user' && role !== 'admin') {
-      throw new BadRequestException('role phải là user hoặc admin');
+    if (!['user', 'admin', 'receptionist', 'cashier'].includes(role)) {
+      throw new BadRequestException('role phải là user, admin, receptionist hoặc cashier');
     }
     return this.adminService.createManagedUser({
       email,
@@ -111,7 +111,7 @@ export class AdminController {
       fullName?: string;
       email?: string;
       phone?: string | null;
-      role?: 'user' | 'admin';
+      role?: 'user' | 'admin' | 'receptionist' | 'cashier';
       departmentId?: string | null;
       bio?: string | null;
       experienceYears?: number | null;
@@ -147,6 +147,16 @@ export class AdminController {
     @CurrentUser() actor: UserPublic,
   ): Promise<{ message: string }> {
     return this.adminService.deleteManagedUser(actor.id, id);
+  }
+
+  @Patch('users/:id/lock')
+  async setManagedUserLock(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() actor: UserPublic,
+    @Body() body: { locked?: boolean },
+  ): Promise<{ message: string }> {
+    if (typeof body?.locked !== 'boolean') throw new BadRequestException('locked phải là boolean');
+    return this.adminService.setManagedUserLocked(actor.id, id, body.locked);
   }
 
   @Patch('users/:id/password')

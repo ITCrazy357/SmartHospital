@@ -11,6 +11,7 @@ import { AppointmentSlotEntity } from '../models/appointment-slot.model';
 import { AppointmentEntity } from '../models/appointment.model';
 import { AppointmentStatus } from '../models/enums';
 import { sqlSlotNotInLunchBreak } from '../common/doctor-slot-hours';
+import { publicDoctor, type PublicDoctorDto } from './public-doctor.dto';
 
 /** GET /doctor/me/patients — bệnh nhân từng đặt lịch với bác sĩ. */
 export interface DoctorPatientDto {
@@ -59,7 +60,7 @@ export class DoctorsService {
     private readonly appointmentRepo: Repository<AppointmentEntity>,
   ) {}
 
-  async findAll(departmentId?: string): Promise<UserEntity[]> {
+  async findAll(departmentId?: string): Promise<PublicDoctorDto[]> {
     const qb = this.userRepo
       .createQueryBuilder('u')
       .leftJoinAndSelect('u.department', 'department')
@@ -69,16 +70,16 @@ export class DoctorsService {
     if (departmentId) {
       qb.andWhere('u.departmentId = :departmentId', { departmentId });
     }
-    return qb.getMany();
+    return (await qb.getMany()).map(publicDoctor);
   }
 
-  async findOne(id: string): Promise<UserEntity | null> {
+  async findOne(id: string): Promise<PublicDoctorDto | null> {
     const user = await this.userRepo.findOne({
       where: { id, role: 'doctor', isLocked: false },
       relations: { department: true },
     });
     if (!user) return null;
-    return user;
+    return publicDoctor(user);
   }
 
   async findSchedulesByDoctor(

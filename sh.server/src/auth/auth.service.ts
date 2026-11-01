@@ -123,28 +123,44 @@ export class AuthService {
   }
 
   async login(dto: LoginDto): Promise<AuthResult> {
-    const user = await this.userRepo.findOne({ where: { email: dto.email.trim().toLowerCase() } });
+    if (typeof dto?.email !== 'string' || typeof dto?.password !== 'string') {
+      throw new BadRequestException('Email và mật khẩu phải là chuỗi.');
+    }
+    const user = await this.userRepo.createQueryBuilder('u')
+      .addSelect(['u.passwordHash', 'u.tokenVersion'])
+      .where('u.email = :email', { email: dto.email.trim().toLowerCase() })
+      .getOne();
     if (!user) {
       throw new UnauthorizedException('Email hoặc mật khẩu không đúng');
-    }
-    if (user.role === 'doctor' && user.isLocked) {
-      throw new ForbiddenException('Tài khoản bác sĩ đã bị khóa. Vui lòng liên hệ quản trị.');
     }
     const ok = await bcrypt.compare(dto.password, user.passwordHash);
     if (!ok) {
       throw new UnauthorizedException('Email hoặc mật khẩu không đúng');
     }
-    const token = this.jwtService.sign({ sub: user.id, email: user.email });
+    if (user.isLocked) {
+      throw new ForbiddenException('Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ quản trị.');
+    }
+    const token = this.jwtService.sign({ sub: user.id, email: user.email, ver: user.tokenVersion });
     return {
       access_token: token,
       user: this.toUserPublic(user),
     };
   }
 
-  async validateUserById(userId: string): Promise<UserPublic | null> {
-    const user = await this.userRepo.findOne({ where: { id: userId } });
-    if (!user) return null;
+  async validateUserById(userId: string, tokenVersion?: number): Promise<UserPublic | null> {
+    if (!Number.isInteger(tokenVersion) || tokenVersion! < 0) return null;
+    const user = await this.userRepo.createQueryBuilder('u')
+      .addSelect('u.tokenVersion')
+      .where('u.id = :id', { id: userId })
+      .getOne();
+    if (!user || user.isLocked || user.tokenVersion !== tokenVersion) return null;
     return this.toUserPublic(user);
+  }
+
+  /** Logout revokes every token issued for the account, including tokens on other devices. */
+  async logout(userId: string): Promise<{ message: string }> {
+    await this.userRepo.increment({ id: userId }, 'tokenVersion', 1);
+    return { message: 'Đã đăng xuất khỏi tất cả thiết bị.' };
   }
 
   async updateAvatar(userId: string, avatarPath: string): Promise<UserPublic> {
@@ -190,14 +206,18 @@ export class AuthService {
     return this.toUserPublic(saved);
   }
 
-  /** Bệnh nhân tự đổi mật khẩu trong dashboard. */
+  /** Change credentials atomically; concurrent resets cannot be overwritten by a stale password check. */
   async changeMyPassword(
     userId: string,
     currentPassword: string,
     password: string,
     confirmPassword: string,
   ): Promise<{ message: string }> {
-    const user = await this.userRepo.findOne({ where: { id: userId, role: 'user' } });
+    const user = await this.userRepo.createQueryBuilder('u')
+      .addSelect('u.passwordHash')
+      .where('u.id = :id', { id: userId })
+      .andWhere('u.isLocked = false')
+      .getOne();
     if (!user) throw new NotFoundException('Không tìm thấy người dùng');
 
     const cur = currentPassword ?? '';
@@ -214,9 +234,15 @@ export class AuthService {
       throw new BadRequestException({ errors: fieldErrors });
     }
 
-    user.passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-    await this.userRepo.save(user);
-    return { message: 'Đã cập nhật mật khẩu.' };
+    const updated = await this.userRepo.update(
+      { id: userId, passwordHash: user.passwordHash, isLocked: false },
+      { passwordHash: await bcrypt.hash(password, SALT_ROUNDS), tokenVersion: () => 'token_version + 1' },
+    );
+    if (updated.affected !== 1) {
+      throw new ConflictException('Tài khoản vừa thay đổi. Vui lòng đăng nhập lại.');
+    }
+    await this.resetTokenRepo.delete({ userId });
+    return { message: 'Đã cập nhật mật khẩu. Vui lòng đăng nhập lại.' };
   }
 
   private hashResetToken(rawToken: string): string {
@@ -240,7 +266,7 @@ export class AuthService {
     }
 
     const user = await this.userRepo.findOne({
-      where: { email, role: 'user' },
+      where: { email, role: 'user', isLocked: false },
     });
     if (!user) {
       return FORGOT_PASSWORD_RESPONSE;
@@ -289,19 +315,27 @@ export class AuthService {
     }
 
     const tokenHash = this.hashResetToken(raw);
-    const row = await this.resetTokenRepo.findOne({
-      where: { tokenHash },
-      relations: ['user'],
+    const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
+    await this.resetTokenRepo.manager.transaction(async (em) => {
+      // DELETE ... RETURNING consumes a reset token once even when requests race.
+      const consumed = await em.createQueryBuilder()
+        .delete().from(PasswordResetTokenEntity)
+        .where('token_hash = :tokenHash', { tokenHash })
+        .andWhere('expires_at > CURRENT_TIMESTAMP')
+        .returning('user_id').execute();
+      const userId = (consumed.raw as { user_id: string }[])[0]?.user_id;
+      if (!userId) {
+        throw new BadRequestException('Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.');
+      }
+      const updated = await em.update(UserEntity,
+        { id: userId, role: 'user', isLocked: false },
+        { passwordHash, tokenVersion: () => 'token_version + 1' },
+      );
+      if (updated.affected !== 1) {
+        throw new BadRequestException('Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.');
+      }
+      await em.delete(PasswordResetTokenEntity, { userId });
     });
-
-    const now = new Date();
-    if (!row || row.expiresAt <= now || !row.user || row.user.role !== 'user') {
-      throw new BadRequestException('Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.');
-    }
-
-    row.user.passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
-    await this.userRepo.save(row.user);
-    await this.resetTokenRepo.delete({ userId: row.user.id });
 
     return { message: 'Đặt lại mật khẩu thành công. Vui lòng đăng nhập.' };
   }

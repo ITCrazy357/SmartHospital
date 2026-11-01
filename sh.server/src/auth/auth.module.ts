@@ -11,6 +11,7 @@ import { MailService } from './mail.service';
 import { JwtStrategy } from './jwt.strategy';
 import { RolesGuard } from './roles.guard';
 import { S3UploadService } from '../common/s3-upload.service';
+import { jwtSecret } from './jwt-config';
 
 @Module({
   imports: [
@@ -19,7 +20,7 @@ import { S3UploadService } from '../common/s3-upload.service';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_SECRET') || 'smart-hospital-secret-change-in-production',
+        secret: jwtSecret(config),
         signOptions: { expiresIn: '7d' },
       }),
       inject: [ConfigService],
