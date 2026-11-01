@@ -8,6 +8,7 @@ import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
 import { AdminAiUsageService } from './admin-ai-usage.service';
 import { AuthModule } from '../auth/auth.module';
+import { SchedulesModule } from '../schedules/schedules.module';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -17,6 +18,7 @@ import { AuthModule } from '../auth/auth.module';
       MedicalRecordEntity,
     ]),
     AuthModule,
+    SchedulesModule,
   ],
   controllers: [AdminController],
   providers: [AdminService, AdminAiUsageService],

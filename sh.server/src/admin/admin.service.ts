@@ -6,7 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { UserEntity, UserPublic } from '../models/user.model';
 import { normalizeVnPhone, validateStrongPassword } from '../common/patient-account.validation';
@@ -14,15 +14,9 @@ import { MailService } from '../auth/mail.service';
 import { AppointmentSlotEntity } from '../models/appointment-slot.model';
 import { AppointmentEntity } from '../models/appointment.model';
 import { MedicalRecordEntity } from '../models/medical-record.model';
-import { SlotStatus } from '../models/enums';
 import type { UserRole } from '../models/user.model';
 import { PaymentStatus } from '../models/enums';
-import {
-  DOCTOR_SLOT_END_HOUR,
-  DOCTOR_SLOT_INTERVAL_MINUTES,
-  DOCTOR_SLOT_START_HOUR,
-  isDoctorLunchBreak,
-} from '../common/doctor-slot-hours';
+import { SchedulesService } from '../schedules/schedules.service';
 
 const STATS_TZ = 'Asia/Ho_Chi_Minh';
 
@@ -60,8 +54,6 @@ export interface AdminStatsOverviewDto {
 
 const SALT_ROUNDS = 10;
 
-/** Số ngày tạo slot kể từ hôm nay */
-const SLOT_DAYS_AHEAD = 14;
 
 @Injectable()
 export class AdminService {
@@ -77,6 +69,7 @@ export class AdminService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly mail: MailService,
+    private readonly schedules: SchedulesService = new SchedulesService(dataSource),
   ) {}
 
   async createDoctor(
@@ -131,8 +124,11 @@ export class AdminService {
       university,
       avatarUrl: avatarUrl?.trim() || null,
     });
-    const saved = await this.userRepo.save(user);
-    await this.generateSlotsForDoctor(saved.id);
+    const saved = await this.dataSource.transaction(async (em) => {
+      const created = await em.save(UserEntity, user);
+      await this.generateSlotsForDoctor(created.id, em);
+      return created;
+    });
     // Gửi email thông tin đăng nhập cho bác sĩ (nếu SMTP cấu hình). Không block việc tạo account nếu thiếu SMTP.
     try {
       if (this.mail.isConfigured()) {
@@ -429,39 +425,8 @@ export class AdminService {
    * Tạo slot đặt lịch cho bác sĩ: T2–T6, 08:00–17:00 (trừ nghỉ trưa 11:30–13:00), mỗi slot 15 phút.
    * Chạy khi admin thêm bác sĩ.
    */
-  private async generateSlotsForDoctor(doctorId: string): Promise<void> {
-    const now = new Date();
-    const slots: Partial<AppointmentSlotEntity>[] = [];
-
-    for (let dayOffset = 0; dayOffset < SLOT_DAYS_AHEAD; dayOffset++) {
-      const date = new Date(now);
-      date.setDate(date.getDate() + dayOffset);
-      date.setHours(0, 0, 0, 0);
-      const dow = date.getDay();
-      if (dow === 0 || dow === 6) continue;
-
-      for (let hour = DOCTOR_SLOT_START_HOUR; hour < DOCTOR_SLOT_END_HOUR; hour++) {
-        for (let minute = 0; minute < 60; minute += DOCTOR_SLOT_INTERVAL_MINUTES) {
-          if (isDoctorLunchBreak(hour, minute)) continue;
-          const slotTime = new Date(date);
-          slotTime.setHours(hour, minute, 0, 0);
-          if (slotTime < now) continue; // bỏ slot đã qua
-          slots.push({
-            doctorId,
-            slotTime,
-            status: SlotStatus.Available,
-          });
-        }
-      }
-    }
-
-    if (slots.length === 0) return;
-    const toInsert = slots.map((s) => ({
-      doctorId: s.doctorId!,
-      slotTime: s.slotTime!,
-      status: SlotStatus.Available,
-    }));
-    await this.slotRepo.insert(toInsert);
+  private async generateSlotsForDoctor(doctorId: string, manager?: EntityManager): Promise<void> {
+    await this.schedules.initializeDoctor(doctorId, manager);
   }
 
   async getDoctorById(doctorId: string): Promise<UserPublic> {
