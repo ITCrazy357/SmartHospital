@@ -107,6 +107,45 @@ Compose Redis port or test URLs into Render.
 
 Reference: [Render deploy steps and CI integration](https://render.com/docs/deploys).
 
+## Supabase certificate trust on Render
+
+`Database migration failed (SELF_SIGNED_CERT_IN_CHAIN)` is a TLS trust failure
+before migrations execute. It is not a Redis error. The deployment entry point
+must keep refusing API startup when the database connection is not verified.
+API and migration TLS now both verify server certificates when SSL is enabled.
+
+For a Supabase CA that is not in Node's built-in trust store:
+
+1. In the **correct Supabase project**, open Database Settings, find SSL
+   Configuration and download the CA certificate using Download Certificate.
+   This is the certificate of the database used by the Render backend, which
+   may differ from a developer's local configuration or Storage project.
+2. In Render's SmartHospital backend, open Environment, Secret Files, Add Secret
+   File. Use Filename `supabase-ca.crt`; paste the complete downloaded PEM,
+   including its BEGIN CERTIFICATE and END CERTIFICATE lines, as Contents.
+3. Set backend environment variables `POSTGRES_SSL=true` and
+   `NODE_EXTRA_CA_CERTS=/etc/secrets/supabase-ca.crt`. Save and deploy. Node reads
+   the latter at process startup: putting it only in an application `.env`
+   loaded after Node starts does not extend the trust store. The migration child
+   inherits the same process environment and certificate file.
+4. If `DATABASE_URL` contains an `sslmode` parameter, use `sslmode=verify-full`.
+   Remove conflicting `ssl` query parameters such as `ssl=0` or
+   `ssl=no-verify`; URL TLS options can override `POSTGRES_SSL=true`.
+   Preserve the connection credentials and host. If it includes `sslrootcert`,
+   ensure that parameter points to the same trusted CA file: an explicitly
+   supplied CA overrides Node's default/extra CA store.
+5. Keep Start Command `npm run start:deploy` and Health Check Path
+   `/health/ready`. Check the migration markers, then readiness, after deploy.
+
+Do not disable TLS verification to get past the error. A missing, invalid or
+wrong CA should fail the deployment. This procedure supplies trust; it does not
+claim that production migrations have succeeded. Schema/data migration errors
+must be handled separately after a verified TLS connection succeeds.
+
+References: [Supabase SSL and CA download](https://supabase.com/docs/guides/platform/ssl-enforcement),
+[Render Secret Files](https://render.com/docs/configure-environment-variables#secret-files),
+[Node extra CA certificates](https://nodejs.org/api/cli.html#node_extra_ca_certsfile).
+
 ## Verified baseline (2026-11-02)
 
 The public frontend `https://smart-hospital-rouge.vercel.app/` returned HTTP 200.

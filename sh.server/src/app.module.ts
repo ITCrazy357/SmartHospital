@@ -49,7 +49,7 @@ import { RedisModule } from './redis/redis.module';
 
           ssl: useSsl
             ? {
-                rejectUnauthorized: false,
+                rejectUnauthorized: true,
               }
             : false,
 
