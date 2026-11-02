@@ -45,4 +45,21 @@ describe('reminder lease and delivery', () => {
     expect(f.mail.sendAppointmentReminderEmail).not.toHaveBeenCalled();
     expect(f.events.some(sql => sql.includes("status='skipped'"))).toBe(true);
   });
+
+  it('does not send a reminder after Redis lease ownership was lost', async () => {
+    const f = fixture();
+    const lease = { signal: new AbortController().signal, assertOwned: jest.fn(async () => { throw new Error('lease lost'); }) };
+    await expect(f.service.runRemindersOnce(lease)).rejects.toThrow('lease lost');
+    expect(f.mail.sendAppointmentReminderEmail).not.toHaveBeenCalled();
+  });
+
+  it('checks lease ownership again after reservation and before SMTP delivery', async () => {
+    const f = fixture();
+    const assertOwned = jest.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+      .mockRejectedValue(new Error('lease lost before delivery'));
+    await expect(f.service.runRemindersOnce({ signal: new AbortController().signal, assertOwned }))
+      .rejects.toThrow('lease lost before delivery');
+    expect(f.mail.sendAppointmentReminderEmail).not.toHaveBeenCalled();
+    expect(f.events.some(sql => sql.includes("status='failed'"))).toBe(true);
+  });
 });

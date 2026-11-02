@@ -5,11 +5,14 @@ import {
   Logger,
   NotFoundException,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DataSource, EntityManager } from 'typeorm';
 import { createHash } from 'crypto';
 import { lockDoctor } from '../common/doctor-lock';
+import { RedisService } from '../redis/redis.service';
+import { runBackgroundJob, type BackgroundJobLease } from '../common/background-job';
 import {
   addDays,
   buildSlotTimes,
@@ -40,7 +43,7 @@ export interface SlotConflict {
 @Injectable()
 export class SchedulesService implements OnModuleInit {
   private readonly logger = new Logger(SchedulesService.name);
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(private readonly dataSource: DataSource, @Optional() private readonly redis?: RedisService) {}
 
   private async readPlan(
     em: EntityManager,
@@ -370,13 +373,14 @@ export class SchedulesService implements OnModuleInit {
       : this.dataSource.transaction(initialize);
   }
 
-  async generateAll() {
+  async generateAll(lease?: BackgroundJobLease) {
     const doctors = await this.dataSource.query(
       `SELECT id FROM users WHERE role='doctor' ORDER BY id`,
     );
     let processed = 0,
       failed = 0;
     for (const doctor of doctors) {
+      await lease?.assertOwned();
       try {
         await this.generateForDoctor(doctor.id);
         processed++;
@@ -391,13 +395,14 @@ export class SchedulesService implements OnModuleInit {
   }
 
   async onModuleInit() {
-    await this.generateAll();
+    await this.refreshHorizon();
   }
   @Cron('0 5 * * * *', {
     name: 'doctor-slot-horizon',
     timeZone: 'Asia/Ho_Chi_Minh',
   })
   async refreshHorizon() {
-    await this.generateAll();
+    await runBackgroundJob(this.redis, 'schedules:refresh-horizon', 120_000,
+      lease => this.generateAll(lease), this.logger);
   }
 }

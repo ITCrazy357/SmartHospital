@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
@@ -7,6 +7,8 @@ import { AnonymizeService } from '../ai/anonymize.service';
 import { AiPolicyService, AI_POLICY_VERSION } from '../ai/ai-policy.service';
 import { MedicalRecordEntity } from '../models/medical-record.model';
 import { UserEntity } from '../models/user.model';
+import { RedisService } from '../redis/redis.service';
+import { runBackgroundJob, type BackgroundJobLease } from '../common/background-job';
 
 /**
  * Quản lý vector embedding cho `medical_records` — phục vụ RAG ở tab Trợ lý AI bác sĩ.
@@ -30,6 +32,7 @@ export class MedicalRecordEmbeddingsService {
     private readonly openai: OpenAIService,
     private readonly anonymize: AnonymizeService,
     private readonly policy: AiPolicyService,
+    @Optional() private readonly redis?: RedisService,
   ) {}
 
   /** Build text mô tả cho 1 record (chỉ giữ medical info có ý nghĩa). */
@@ -173,6 +176,11 @@ export class MedicalRecordEmbeddingsService {
 
   @Cron('0 */5 * * * *', { name: 'medical-embedding-retry' })
   async retryPending(): Promise<void> {
+    await runBackgroundJob(this.redis, 'medical-records:retry-embeddings', 120_000,
+      lease => this.retryPendingRecords(lease), this.logger);
+  }
+
+  private async retryPendingRecords(lease?: BackgroundJobLease): Promise<void> {
     if (!this.openai.isConfigured() || !(await this.policy.status()).enabled) return;
     const rows = await this.dataSource.query(`SELECT mr.id FROM medical_records mr
       JOIN users d ON d.id=mr.doctor_id AND d.role='doctor' AND d.is_locked=false
@@ -181,6 +189,7 @@ export class MedicalRecordEmbeddingsService {
       JOIN ai_consents pc ON pc.user_id=p.id AND pc.revoked_at IS NULL AND pc.policy_version=$1
       WHERE mr.embedding_status IN ('pending','failed') ORDER BY mr.updated_at ASC LIMIT 20`, [AI_POLICY_VERSION]);
     for (const row of rows) {
+      await lease?.assertOwned();
       try { await this.embedRecord(row.id); } catch { this.logger.warn('Tác vụ embedding chưa hoàn tất; sẽ thử lại trong đợt sau.'); }
     }
   }

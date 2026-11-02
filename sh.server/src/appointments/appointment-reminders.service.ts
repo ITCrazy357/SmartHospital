@@ -1,10 +1,12 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, QueryFailedError } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { MailService } from '../auth/mail.service';
 import { AppointmentStatus } from '../models/enums';
 import type { AppointmentReminderKind } from '../models/appointment-reminder.model';
+import { RedisService } from '../redis/redis.service';
+import { runBackgroundJob, type BackgroundJobLease } from '../common/background-job';
 
 /**
  * Cấu hình mốc nhắc lịch:
@@ -41,13 +43,14 @@ export class AppointmentRemindersService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly mailService: MailService,
+    @Optional() private readonly redis?: RedisService,
   ) {}
 
   /**
    * Quét các cuộc hẹn cần nhắc cho 2 mốc h24 + h1, gửi mail và ghi log idempotent.
    * Trả về số lượng đã gửi từng loại — dùng cho endpoint admin "Chạy thủ công".
    */
-  async runRemindersOnce(): Promise<{
+  async runRemindersOnce(lease?: BackgroundJobLease): Promise<{
     h24Sent: number;
     h1Sent: number;
     h24Failed: number;
@@ -61,8 +64,8 @@ export class AppointmentRemindersService {
       return { h24Sent: 0, h1Sent: 0, h24Failed: 0, h1Failed: 0, skipped: 0 };
     }
 
-    const h24 = await this.processKind('h24');
-    const h1 = await this.processKind('h1');
+    const h24 = await this.processKind('h24', lease);
+    const h1 = await this.processKind('h1', lease);
 
     return {
       h24Sent: h24.sent,
@@ -75,7 +78,9 @@ export class AppointmentRemindersService {
 
   private async processKind(
     kind: AppointmentReminderKind,
+    lease?: BackgroundJobLease,
   ): Promise<{ sent: number; failed: number; skipped: number }> {
+    await lease?.assertOwned();
     const win = REMINDER_WINDOWS[kind];
 
     // Lấy ứng viên: confirmed, slot trong cửa sổ, chưa từng gửi mốc này.
@@ -117,6 +122,7 @@ export class AppointmentRemindersService {
     let skipped = 0;
 
     for (const row of rows) {
+      await lease?.assertOwned();
       // Bỏ qua nếu user không có email (về lý thuyết user.email là NOT NULL UNIQUE,
       // nhưng vẫn check để code chịu được dirty data).
       if (!row.user_email) {
@@ -152,6 +158,7 @@ export class AppointmentRemindersService {
           await this.dataSource.query("UPDATE appointment_reminders SET status='skipped',locked_until=NULL,last_error='appointment_no_longer_confirmed' WHERE appointment_id=$1 AND kind=$2 AND attempts=$3",[row.id,kind,reserved[0].attempts]);
           skipped++; continue;
         }
+        await lease?.assertOwned();
         await this.mailService.sendAppointmentReminderEmail(row.user_email, {
           patientName: row.user_full_name ?? 'Quý khách',
           doctorName: row.doctor_full_name ?? 'Bác sĩ',
@@ -266,15 +273,7 @@ export class AppointmentRemindersService {
    */
   @Cron(CronExpression.EVERY_5_MINUTES, { name: 'appointments-reminders' })
   async cronRunReminders(): Promise<void> {
-    try {
-      await this.runRemindersOnce();
-    } catch (e) {
-      // Bao toàn bộ — không cho cron crash NestJS.
-      if (e instanceof QueryFailedError) {
-        this.logger.error(`Cron reminders DB lỗi: ${e.message}`);
-      } else {
-        this.logger.error(`Cron reminders lỗi: ${e instanceof Error ? e.message : e}`);
-      }
-    }
+    await runBackgroundJob(this.redis, 'appointments:reminders', 120_000,
+      lease => this.runRemindersOnce(lease), this.logger);
   }
 }

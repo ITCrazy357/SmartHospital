@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
@@ -23,6 +24,8 @@ import {
 import { PayOSService } from '../payos/payos.service';
 import { ConfigService } from '@nestjs/config';
 import { lockDoctor } from '../common/doctor-lock';
+import { RedisService } from '../redis/redis.service';
+import { runBackgroundJob, type BackgroundJobLease } from '../common/background-job';
 
 const TTL_MS = 5 * 60_000;
 // TypeORM pg mutation queries return [returnedRows, affectedCount], SELECT returns rows.
@@ -92,6 +95,7 @@ export class AppointmentsService {
     private readonly dataSource: DataSource,
     private readonly payos: PayOSService,
     private readonly config: ConfigService,
+    @Optional() private readonly redis?: RedisService,
   ) {}
 
   private async ensureDoctor(
@@ -654,7 +658,7 @@ export class AppointmentsService {
     return { cancelled, slotsReleased };
   }
 
-  async reconcilePending(): Promise<{ checked: number }> {
+  async reconcilePending(lease?: BackgroundJobLease): Promise<{ checked: number }> {
     const rows = await this.paymentRepo
       .createQueryBuilder('p')
       .where("p.payment_method='payos' AND p.payos_order_code IS NOT NULL")
@@ -669,11 +673,13 @@ export class AppointmentsService {
       .take(25)
       .getMany();
     for (const p of rows) {
+      await lease?.assertOwned();
       await this.dataSource.query(
         'UPDATE payments SET last_reconciled_at=now() WHERE id=$1',
         [p.id],
       );
       try {
+        await lease?.assertOwned();
         const status = await this.payos.getPayment(Number(p.payosOrderCode));
         if (status?.status === 'PAID')
           await this.markPaymentPaidByPayOSOrderCode(
@@ -687,19 +693,13 @@ export class AppointmentsService {
     return { checked: rows.length };
   }
   @Cron('0 * * * * *') async cronReleaseStaleBookings() {
-    try {
-      await this.releaseStalePendingBookings();
-    } catch {
-      this.logger.error('Không thu hồi được lịch chờ');
-    }
+    await runBackgroundJob(this.redis, 'appointments:expire-pending', 30_000,
+      () => this.releaseStalePendingBookings(), this.logger);
   }
   @Cron('0 */10 * * * *') async cronReconcile() {
     if (this.payos.isConfigured())
-      try {
-        await this.reconcilePending();
-      } catch {
-        this.logger.error('Đối soát chưa hoàn tất');
-      }
+      await runBackgroundJob(this.redis, 'appointments:reconcile-payments', 120_000,
+        lease => this.reconcilePending(lease), this.logger);
   }
   async purgeOrphanPastAvailableSlots(): Promise<number> {
     const rows = await this.dataSource
@@ -710,10 +710,7 @@ export class AppointmentsService {
   }
   @Cron('0 0 3 * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
   async cronPurgeOrphanPastAvailableSlots() {
-    try {
-      await this.purgeOrphanPastAvailableSlots();
-    } catch {
-      this.logger.error('Chưa dọn được ca trống');
-    }
+    await runBackgroundJob(this.redis, 'appointments:purge-unused-slots', 60_000,
+      () => this.purgeOrphanPastAvailableSlots(), this.logger);
   }
 }
