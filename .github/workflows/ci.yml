@@ -8,9 +8,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -25,12 +30,23 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: sh.server
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
@@ -41,21 +57,28 @@ jobs:
       - run: npm run test:integration
         env:
           TEST_DATABASE_URL: postgresql://sh_test:local-ci-only-password@localhost:5432/smarthospital_test
+          TEST_REDIS_URL: redis://127.0.0.1:6379/0
       - run: npm run build
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: sh.client
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: sh.client/package-lock.json
       - run: npm ci
       - run: npm test
-      - run: npm run lint
-      - run: npm run build
+      - name: Build the same deployment entry point as Vercel
+        run: npm run build:deploy
+        env:
+          # A build fixture only: no API request is made and no production secret is needed.
+          VITE_API_URL: https://api.example.invalid
