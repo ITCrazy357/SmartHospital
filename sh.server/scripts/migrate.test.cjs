@@ -39,6 +39,17 @@ test('runner wraps migration and history write in a transaction', async () => {
   } finally { f.cleanup(); }
 });
 
+test('baseline namespace preparation runs within its transaction before immutable SQL', async () => {
+  const f = fixture({ '000_baseline.sql': 'SELECT 1;' });
+  try {
+    await runMigrations(f.client, { directory: f.directory, log() {} });
+    const sql = f.statements.map(s => s.sql);
+    const preparation = sql.findIndex(statement => statement.includes('typnamespace=current_schema()::regnamespace'));
+    assert.ok(preparation > sql.indexOf('BEGIN'));
+    assert.ok(preparation < sql.indexOf('SELECT 1;'));
+  } finally { f.cleanup(); }
+});
+
 test('failure rolls back and does not log private database error detail', async () => {
   const f = fixture({ '001_first.sql': 'FAIL;' });
   const query = f.client.query;

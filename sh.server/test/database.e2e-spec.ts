@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
-const { runMigrations } = require('../scripts/migrate.cjs');
+const { runMigrations, prepareBaseline } = require('../scripts/migrate.cjs');
 
 const testUrl = process.env.TEST_DATABASE_URL;
 const integration = testUrl ? describe : describe.skip;
@@ -42,9 +42,21 @@ integration('versioned migrations on an isolated PostgreSQL schema', () => {
     expect((await client.query('SELECT token_version FROM users WHERE id=$1', [patient.rows[0].id])).rows[0].token_version).toBe(0);
   });
 
+  it('bootstraps even when a different schema already has an identically named enum', async () => {
+    const shadow = `sh_shadow_${randomUUID().replace(/-/g, '')}`;
+    await client.query(`CREATE SCHEMA "${shadow}"`);
+    try {
+      await client.query(`CREATE TYPE "${shadow}".slot_status AS ENUM ('available','booked','on_leave')`);
+      await runMigrations(client, { log() {} });
+      const own = await client.query("SELECT 1 FROM pg_type WHERE typname='slot_status' AND typnamespace=$1::regnamespace", [schema]);
+      expect(own.rows).toHaveLength(1);
+    } finally { await client.query(`DROP SCHEMA "${shadow}" CASCADE`); }
+  });
+
   it('upgrades an unversioned baseline without losing existing patient data', async () => {
     const fs = require('node:fs');
     const path = require('node:path');
+    await prepareBaseline(client);
     await client.query(fs.readFileSync(path.join(__dirname, '../migrations/000_baseline.sql'), 'utf8'));
     const patient = await client.query("INSERT INTO users(full_name,email,password_hash) VALUES ('Existing fixture','existing@example.invalid','fixture-hash') RETURNING id");
     await runMigrations(client, { log() {} });
@@ -62,6 +74,7 @@ integration('versioned migrations on an isolated PostgreSQL schema', () => {
   it('stops an unsafe upgrade with duplicates and leaves rows intact', async () => {
     const fs = require('node:fs');
     const path = require('node:path');
+    await prepareBaseline(client);
     await client.query(fs.readFileSync(path.join(__dirname, '../migrations/000_baseline.sql'), 'utf8'));
     await client.query("INSERT INTO users(full_name,email,password_hash,phone) VALUES ('Fixture A','a@example.invalid','fixture-hash','0901234567'),('Fixture B','b@example.invalid','fixture-hash','0901234567')");
     await expect(runMigrations(client, { log() {} })).rejects.toMatchObject({ code: 'P0001' });

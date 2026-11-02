@@ -7,6 +7,25 @@ const { loadEnvFile, databaseConfig, defaultEnvPath } = require('./database-conf
 const MIGRATION_LOCK = 746835201;
 const defaultDirectory = path.resolve(__dirname, '..', 'migrations');
 
+async function prepareBaseline(client) {
+  // The immutable legacy baseline checks pg_type globally. Prepare its types
+  // in the actual target namespace so another application's schema cannot
+  // cause it to skip CREATE TYPE and then fail resolving ALTER TYPE.
+  const definitions = {
+    slot_status: ['available', 'booked', 'on_leave'],
+    ad_type: ['banner', 'promo'],
+    ad_status: ['draft', 'active', 'paused', 'archived', 'expired'],
+    ad_placement: ['home_hero', 'home_below_search', 'doctor_detail', 'dashboard_user'],
+  };
+  for (const [name, labels] of Object.entries(definitions)) {
+    await client.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname='${name}' AND typnamespace=current_schema()::regnamespace) THEN
+        CREATE TYPE ${name} AS ENUM (${labels.map(label => `'${label}'`).join(',')});
+      END IF;
+    END $$`);
+  }
+}
+
 function readMigrations(directory = defaultDirectory) {
   return fs.readdirSync(directory).filter(name => /^\d{3}_[a-z0-9_]+\.sql$/.test(name)).sort().map(name => {
     const sql = fs.readFileSync(path.join(directory, name), 'utf8').replace(/\r\n/g, '\n');
@@ -40,6 +59,7 @@ async function runMigrations(client, { directory = defaultDirectory, log = conso
       try {
         await client.query("SET LOCAL lock_timeout = '10s'");
         await client.query("SET LOCAL statement_timeout = '120s'");
+        if (file.name === '000_baseline.sql') await prepareBaseline(client);
         await client.query(file.sql);
         await client.query('INSERT INTO schema_migrations(name, checksum) VALUES ($1, $2)', [file.name, file.checksum]);
         await client.query('COMMIT');
@@ -77,4 +97,4 @@ if (require.main === module) main().catch(error => {
   process.exitCode = 1;
 });
 
-module.exports = { readMigrations, runMigrations };
+module.exports = { readMigrations, runMigrations, prepareBaseline };
