@@ -1,4 +1,4 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Post, Body, BadRequestException } from '@nestjs/common';
 import { PayOSService } from '../payos/payos.service';
 import { AppointmentsService } from './appointments.service';
 import { PayOSWebhookBodyDto } from './dto/payos-webhook.dto';
@@ -24,12 +24,14 @@ export class PayOSWebhookController {
 
     const isValid = this.payos.verifyWebhookSignature(data as unknown as Record<string, unknown>, signature);
     if (!isValid) {
-      return { success: false };
+      throw new BadRequestException('Chữ ký webhook không hợp lệ');
     }
 
     const orderCode = data.orderCode;
     if (orderCode != null) {
-      await this.appointmentsService.markPaymentPaidByPayOSOrderCode(Number(orderCode));
+      if (data.code !== '00' || !Number.isSafeInteger(Number(orderCode)) || !Number.isSafeInteger(data.amount))
+        throw new BadRequestException('Dữ liệu giao dịch không hợp lệ');
+      await this.appointmentsService.markPaymentPaidByPayOSOrderCode(Number(orderCode), data.amount);
     }
     return { success: true };
   }

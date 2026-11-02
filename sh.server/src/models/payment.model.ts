@@ -19,6 +19,21 @@ export interface Payment {
 
 @Entity('payments')
 export class PaymentEntity {
+  @Column({ name: 'checkout_url', type: 'text', nullable: true })
+  checkoutUrl: string | null;
+
+  @Column({ name: 'payment_link_id', type: 'text', nullable: true })
+  paymentLinkId: string | null;
+
+  @Column({ name: 'expires_at', type: 'timestamptz', nullable: true })
+  expiresAt: Date | null;
+
+  @Column({ name: 'reconciliation_status', type: 'varchar', default: 'clear' })
+  reconciliationStatus: string;
+
+  @Column({ name: 'reconciliation_reason', type: 'text', nullable: true })
+  reconciliationReason: string | null;
+
   @PrimaryGeneratedColumn('uuid')
   id: string;
 

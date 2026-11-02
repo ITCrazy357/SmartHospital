@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Param, ParseUUIDPipe, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, ParseUUIDPipe, UseGuards, Query, BadRequestException } from '@nestjs/common';
 import {
   AppointmentsService,
   CreateBookingResult,
@@ -10,6 +10,9 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { UserPublic } from '../models/user.model';
 import { ConfigService } from '@nestjs/config';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { isUuid } from '../common/is-uuid';
 
 @Controller('appointments')
 export class AppointmentsController {
@@ -19,21 +22,39 @@ export class AppointmentsController {
   ) {}
 
   @Post()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('user')
   async create(
     @CurrentUser() user: UserPublic,
     @Body() dto: CreateBookingDto,
   ): Promise<CreateBookingResult> {
-    const baseUrl = this.config.get<string>('PUBLIC_API_URL') ?? 'http://localhost:3000';
+    if (!isUuid(dto.slotId)) throw new BadRequestException('slotId phải là UUID');
+    const baseUrl = this.config.get<string>('CLIENT_APP_URL') ?? 'http://localhost:5431';
     const returnUrl = dto.returnUrl ?? `${baseUrl}/booking/success`;
     const cancelUrl = dto.cancelUrl ?? `${baseUrl}/booking/cancel`;
     return this.appointmentsService.createBooking(user.id, dto, returnUrl, cancelUrl);
   }
 
+  @Get(':id/status')
+  @UseGuards(JwtAuthGuard)
+  status(@CurrentUser() user: UserPublic, @Param('id', ParseUUIDPipe) id: string) {
+    return this.appointmentsService.statusForPatient(user.id, id);
+  }
+
+  @Post(':id/reschedule')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('user')
+  reschedule(@CurrentUser() user: UserPublic, @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { slotId: string; reason: string }) {
+    if (!isUuid(body.slotId) || typeof body.reason !== 'string') throw new BadRequestException('Ca mới/lý do không hợp lệ');
+    return this.appointmentsService.reschedule(user.id, id, body.slotId, body.reason);
+  }
+
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  async getMyAppointments(@CurrentUser() user: UserPublic): Promise<AppointmentWithDetailsDto[]> {
-    return this.appointmentsService.findMyAppointments(user.id);
+  async getMyAppointments(@CurrentUser() user: UserPublic, @Query('page') page?:string): Promise<AppointmentWithDetailsDto[]> {
+    const p=Number(page??1);if(!Number.isInteger(p)||p<1||p>100000)throw new BadRequestException('Trang không hợp lệ');
+    return this.appointmentsService.findMyAppointments(user.id,p);
   }
 
   @Get('me/payments')
