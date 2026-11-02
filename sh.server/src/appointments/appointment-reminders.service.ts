@@ -12,7 +12,8 @@ import type { AppointmentReminderKind } from '../models/appointment-reminder.mod
  *  - h1 : 1h trước slot.  Cron quét trong khoảng [now, now+1h] (cũng đủ rộng).
  * Cửa sổ rộng hơn chu kỳ cron đảm bảo: nếu server tắt 30 phút mid-window,
  * lần chạy kế tiếp vẫn bắt được. Idempotency dựa vào PRIMARY KEY của bảng
- * appointment_reminders, nên gửi trùng là KHÔNG xảy ra.
+ * appointment_reminders. Delivery is at-least-once: a crash after provider acceptance
+ * but before recording success can cause a duplicate on retry.
  */
 const REMINDER_WINDOWS: Record<
   AppointmentReminderKind,
@@ -98,9 +99,10 @@ export class AppointmentRemindersService {
       LEFT JOIN appointment_reminders r
              ON r.appointment_id = a.id AND r.kind = $1
       WHERE a.status = $2
-        AND s.slot_time >= now() + ($3 || ' seconds')::interval
-        AND s.slot_time <  now() + ($4 || ' seconds')::interval
-        AND r.appointment_id IS NULL
+        AND (s.slot_time AT TIME ZONE 'Asia/Ho_Chi_Minh') >= now() + ($3 || ' seconds')::interval
+        AND (s.slot_time AT TIME ZONE 'Asia/Ho_Chi_Minh') <  now() + ($4 || ' seconds')::interval
+        AND (r.appointment_id IS NULL OR (r.status NOT IN ('sent','skipped') AND r.next_attempt_at <= now()
+          AND (r.locked_until IS NULL OR r.locked_until < now())))
       `,
       [
         kind,
@@ -127,13 +129,16 @@ export class AppointmentRemindersService {
       // ON CONFLICT DO NOTHING → kẻ thua không throw, vòng for tiếp tục.
       const reserved = (await this.dataSource.query(
         `
-        INSERT INTO appointment_reminders (appointment_id, kind, sent_at)
-        VALUES ($1, $2, now())
-        ON CONFLICT (appointment_id, kind) DO NOTHING
-        RETURNING appointment_id
+        INSERT INTO appointment_reminders (appointment_id, kind, sent_at, status, attempts, locked_until)
+        VALUES ($1, $2, now(), 'processing', 1, now()+interval '2 minutes')
+        ON CONFLICT (appointment_id, kind) DO UPDATE SET status='processing',
+          attempts=appointment_reminders.attempts+1, locked_until=now()+interval '2 minutes'
+        WHERE appointment_reminders.status NOT IN ('sent','skipped') AND appointment_reminders.next_attempt_at <= now()
+          AND (appointment_reminders.locked_until IS NULL OR appointment_reminders.locked_until < now())
+        RETURNING appointment_id, attempts
         `,
         [row.id, kind],
-      )) as { appointment_id: string }[];
+      )) as { appointment_id: string; attempts: number }[];
 
       if (reserved.length === 0) {
         skipped++;
@@ -142,6 +147,11 @@ export class AppointmentRemindersService {
 
       // (2) GỬI MAIL — nếu lỗi mạng/SMTP, rollback row đã reserve để lần cron sau retry.
       try {
+        const active = await this.dataSource.query("SELECT 1 FROM appointments WHERE id=$1 AND status='confirmed'", [row.id]);
+        if (!active.length) {
+          await this.dataSource.query("UPDATE appointment_reminders SET status='skipped',locked_until=NULL,last_error='appointment_no_longer_confirmed' WHERE appointment_id=$1 AND kind=$2 AND attempts=$3",[row.id,kind,reserved[0].attempts]);
+          skipped++; continue;
+        }
         await this.mailService.sendAppointmentReminderEmail(row.user_email, {
           patientName: row.user_full_name ?? 'Quý khách',
           doctorName: row.doctor_full_name ?? 'Bác sĩ',
@@ -149,6 +159,8 @@ export class AppointmentRemindersService {
           slotTime: new Date(row.slot_time),
           kind,
         });
+        await this.dataSource.query(`UPDATE appointment_reminders SET status='sent',sent_at=now(),locked_until=NULL,last_error=NULL
+          WHERE appointment_id=$1 AND kind=$2 AND attempts=$3`,[row.id,kind,reserved[0].attempts]);
         sent++;
       } catch (e) {
         failed++;
@@ -157,8 +169,9 @@ export class AppointmentRemindersService {
         );
         try {
           await this.dataSource.query(
-            `DELETE FROM appointment_reminders WHERE appointment_id = $1 AND kind = $2`,
-            [row.id, kind],
+            `UPDATE appointment_reminders SET status='failed',locked_until=NULL,last_error='delivery_failed',
+              next_attempt_at=now()+interval '5 minutes' WHERE appointment_id = $1 AND kind = $2 AND attempts=$3`,
+            [row.id, kind, reserved[0].attempts],
           );
         } catch (delErr) {
           // Xoá row dự phòng cũng lỗi → để nguyên, log thôi; sẽ không tự retry mốc này.
