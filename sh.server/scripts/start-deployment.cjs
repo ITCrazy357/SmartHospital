@@ -9,12 +9,15 @@ function startDeployment({
   }),
   start = () => require('../dist/main.js'),
   log = console.error,
+  info = console.log,
 } = {}) {
+  info('[deploy] Running database migrations.');
   const result = migrate();
   if (result.error || result.signal || result.status !== 0) {
     log('Deployment stopped: database migration did not complete. API was not started.');
     return Number.isInteger(result.status) && result.status > 0 ? result.status : 1;
   }
+  info('[deploy] Migrations completed; starting API.');
   start();
   return 0;
 }

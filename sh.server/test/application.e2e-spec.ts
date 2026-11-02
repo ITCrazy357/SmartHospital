@@ -120,6 +120,18 @@ integration('full application module and HTTP clinic workflow on disposable Post
     expect(external).not.toHaveBeenCalled();
   });
 
+  it('fails readiness on missing scheduling schema even with a complete migration ledger', async () => {
+    await db.query(`ALTER TABLE "${schema}".doctor_schedule_rules RENAME TO doctor_schedule_rules_unavailable`);
+    try {
+      const response = await request(app.getHttpServer()).get('/health/ready').expect(503);
+      expect(response.body.statusCode).toBe(503);
+      expect(JSON.stringify(response.body)).not.toContain('doctor_schedule_rules');
+    } finally {
+      await db.query(`ALTER TABLE "${schema}".doctor_schedule_rules_unavailable RENAME TO doctor_schedule_rules`);
+    }
+    await request(app.getHttpServer()).get('/health/ready').expect(200, { status: 'ready' });
+  });
+
   it('carries a linked patient through reception, draft/final clinical record and cashier collection over HTTP', async () => {
     const patient = await call('receptionist', 'post', '/clinic/patients', {
       fullName: 'Linked HTTP fixture', userId: identities.user, phone: '0901234567',

@@ -1,4 +1,4 @@
-import { Body, Controller, INestApplication, Post } from '@nestjs/common';
+import { Body, Controller, INestApplication, Logger, Post } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import request from 'supertest';
@@ -26,7 +26,9 @@ describe('HTTP readiness and request validation boundary', () => {
   );
   const query = jest.fn();
   const redisReady = jest.fn();
+  let warnings: jest.SpyInstance;
   beforeAll(async () => {
+    warnings = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
     const module = await Test.createTestingModule({
       controllers: [HealthController, ValidationFixtureController],
       providers: [
@@ -42,6 +44,7 @@ describe('HTTP readiness and request validation boundary', () => {
     saved.mockClear();
     query.mockReset();
     redisReady.mockReset().mockResolvedValue(true);
+    warnings.mockClear();
     query.mockImplementation(async (sql: string) =>
       sql.includes('schema_migrations')
         ? expected.map((name) => ({ name }))
@@ -50,6 +53,7 @@ describe('HTTP readiness and request validation boundary', () => {
   });
   afterAll(async () => {
     await app?.close();
+    warnings.mockRestore();
   });
 
   it('serves a live probe without requiring a database query', async () => {
@@ -71,6 +75,9 @@ describe('HTTP readiness and request validation boundary', () => {
       .expect(200, { status: 'ready' });
     expect(query.mock.calls[0][0]).toContain('u.token_version');
     expect(query.mock.calls[0][0]).toContain('clinic_visits');
+    expect(query.mock.calls[0][0]).toContain('doctor_schedule_rules');
+    expect(query.mock.calls[0][0]).toContain('doctor_schedule_exceptions');
+    expect(query.mock.calls[0][0]).toContain('appointment_reminders');
     query.mockImplementation(async (sql: string) =>
       sql.includes('schema_migrations') ? [] : [],
     );
@@ -83,6 +90,27 @@ describe('HTTP readiness and request validation boundary', () => {
       .expect(503);
     expect(response.body.message).toBe('Dữ liệu hệ thống chưa sẵn sàng');
     expect(JSON.stringify(response.body)).not.toContain('private database');
+  });
+  it('logs dependency stages privately and suppresses repeated failures until recovery', async () => {
+    await request(app.getHttpServer()).get('/health/ready').expect(200);
+    redisReady.mockResolvedValue(false);
+    await request(app.getHttpServer()).get('/health/ready').expect(503);
+    await request(app.getHttpServer()).get('/health/ready').expect(503);
+    expect(warnings).toHaveBeenCalledTimes(1);
+    expect(warnings).toHaveBeenLastCalledWith('Readiness failed: redis');
+    redisReady.mockResolvedValue(true);
+    query.mockRejectedValue(Object.assign(new Error('private credential or patient detail'), { code: '42P01' }));
+    await request(app.getHttpServer()).get('/health/ready').expect(503);
+    expect(warnings).toHaveBeenLastCalledWith('Readiness failed: database_schema (SQLSTATE 42P01)');
+    query.mockImplementation(async (sql: string) => sql.includes('schema_migrations') ? [] : []);
+    await request(app.getHttpServer()).get('/health/ready').expect(503);
+    expect(warnings).toHaveBeenLastCalledWith('Readiness failed: migration_history');
+    expect(JSON.stringify(warnings.mock.calls)).not.toContain('private');
+    query.mockImplementation(async (sql: string) => sql.includes('schema_migrations') ? expected.map(name => ({ name })) : []);
+    await request(app.getHttpServer()).get('/health/ready').expect(200);
+    redisReady.mockResolvedValue(false);
+    await request(app.getHttpServer()).get('/health/ready').expect(503);
+    expect(warnings).toHaveBeenCalledTimes(4);
   });
   it.each([{}, { name: null }, { name: 4 }, { name: 'Valid', role: 'admin' }])(
     'rejects invalid DTO %p over HTTP before saving',

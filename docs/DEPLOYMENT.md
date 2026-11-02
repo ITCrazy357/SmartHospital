@@ -82,6 +82,18 @@ Root Directory at the repository root must use the equivalent `npm --prefix
 sh.server ...` commands. Docker users can override the command to
 `npm run start:deploy` after completing the same backup/rehearsal steps.
 
+Startup logs must include `[deploy] Running database migrations.` followed by
+`[deploy] Migrations completed; starting API.` before Nest starts. If migration
+fails, the second marker and API startup do not occur. Compare the deployment
+commit and its own deploy logs: application logs may still come from a previous
+instance after a failed deployment.
+
+Readiness retains a generic public 503 response. Private logs identify `redis`,
+`database_schema`, `migration_files` or `migration_history`, with SQLSTATE only
+for database errors. Identical failures are logged once until recovery or a
+different failure. The schema probe includes doctor scheduling tables and
+reminder state, so a complete migration ledger alone cannot hide that drift.
+
 Alternatively, on a plan supporting Pre-Deploy Commands, use `npm run db:migrate`
 and keep Start Command `npm run start:prod`; choose one migration entry point.
 Set Auto-Deploy to **After CI Checks Pass** and check the exact deployed commit.

@@ -5,10 +5,12 @@ const { startDeployment } = require('./start-deployment.cjs');
 test('API starts only after successful migration', () => {
   const events = [];
   assert.equal(startDeployment({
+    info: message => events.push(message),
     migrate: () => { events.push('migration'); return { status: 0 }; },
     start: () => events.push('API'),
   }), 0);
-  assert.deepEqual(events, ['migration', 'API']);
+  assert.deepEqual(events, ['[deploy] Running database migrations.', 'migration',
+    '[deploy] Migrations completed; starting API.', 'API']);
 });
 
 for (const result of [{ status: 2 }, { status: null, signal: 'SIGTERM' },
@@ -17,7 +19,7 @@ for (const result of [{ status: 2 }, { status: null, signal: 'SIGTERM' },
     let started = false;
     const logs = [];
     const code = startDeployment({ migrate: () => result,
-      start: () => { started = true; }, log: message => logs.push(message) });
+      info: () => {}, start: () => { started = true; }, log: message => logs.push(message) });
     assert.ok(code > 0);
     assert.equal(started, false);
     assert.ok(logs[0].includes('API was not started'));
