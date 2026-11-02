@@ -3,21 +3,51 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import { Header, Footer } from './components/Layout';
-import { LandingPage } from './components/LandingPage';
-import { DoctorSearch } from './components/DoctorSearch';
-import { DoctorProfile } from './components/DoctorProfile';
-import { BookingFlow } from './components/BookingFlow';
-import { Dashboard } from './components/Dashboard';
-import { DashboardDoctor } from './components/DashboardDoctor';
-import { DashboardAdmin } from './components/DashboardAdmin';
-import { DepartmentsList } from './components/DepartmentsList';
-import { AuthModal } from './components/AuthModal';
-import { ResetPasswordView } from './components/ResetPasswordView';
-import { Doctor } from './types';
-import { getView, getResetPasswordToken, replaceSearchParams } from './utils/urlSearchParams';
+import React, { useState, useEffect, useCallback, Suspense, lazy } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { Header, Footer } from "./components/Layout";
+import { LandingPage } from "./components/LandingPage";
+const DoctorSearch = lazy(() =>
+  import("./components/DoctorSearch").then((m) => ({
+    default: m.DoctorSearch,
+  })),
+);
+const DoctorProfile = lazy(() =>
+  import("./components/DoctorProfile").then((m) => ({
+    default: m.DoctorProfile,
+  })),
+);
+const BookingFlow = lazy(() =>
+  import("./components/BookingFlow").then((m) => ({ default: m.BookingFlow })),
+);
+const Dashboard = lazy(() =>
+  import("./components/Dashboard").then((m) => ({ default: m.Dashboard })),
+);
+const DashboardDoctor = lazy(() =>
+  import("./components/DashboardDoctor").then((m) => ({
+    default: m.DashboardDoctor,
+  })),
+);
+const DashboardAdmin = lazy(() =>
+  import("./components/DashboardAdmin").then((m) => ({
+    default: m.DashboardAdmin,
+  })),
+);
+const ClinicWorkspace = lazy(
+  () => import("./components/clinic/ClinicWorkspace"),
+);
+import { BookingResult } from "./components/BookingResult";
+import { ScheduleManager } from "./components/ScheduleManager";
+import { AiConsentPanel } from "./components/AiConsentPanel";
+import { DepartmentsList } from "./components/DepartmentsList";
+import { AuthModal } from "./components/AuthModal";
+import { ResetPasswordView } from "./components/ResetPasswordView";
+import { Doctor } from "./types";
+import {
+  getView,
+  getResetPasswordToken,
+  replaceSearchParams,
+} from "./utils/urlSearchParams";
 import {
   api,
   getStoredUser,
@@ -25,71 +55,86 @@ import {
   setStoredAuth,
   clearStoredAuth,
   AUTH_CLEARED_EVENT,
-} from './api/client';
-import type { ApiAuthUser } from './api/client';
-import { useToast } from './contexts/ToastContext';
-import { ModalOverlay, ModalCloseButton } from './components/ModalOverlay';
+} from "./api/client";
+import type { ApiAuthUser } from "./api/client";
+import { mapDoctor } from "./api/mappers";
+import { useToast } from "./contexts/ToastContext";
+import { ModalOverlay, ModalCloseButton } from "./components/ModalOverlay";
 import {
   sanitizeViewForUser,
   isDashboardView,
   defaultDashboardViewForUser,
   isPatientUser,
   normalizedUserRole,
-} from './utils/dashboardRbac';
+} from "./utils/dashboardRbac";
 
 const VALID_VIEWS = [
-  'home',
-  'search',
-  'departments',
-  'profile',
-  'booking',
-  'booking-success',
-  'dashboard',
-  'dashboard-doctor',
-  'dashboard-admin',
-  'reset-password',
+  "home",
+  "search",
+  "departments",
+  "profile",
+  "booking",
+  "booking-success",
+  "dashboard",
+  "dashboard-doctor",
+  "dashboard-admin",
+  "dashboard-clinic",
+  "reset-password",
 ];
 
 /** Các view yêu cầu đăng nhập — guest truy cập sẽ về home. */
 const PROTECTED_VIEWS = new Set([
-  'dashboard',
-  'dashboard-doctor',
-  'dashboard-admin',
-  'profile',
-  'booking',
-  'booking-success',
+  "dashboard",
+  "dashboard-doctor",
+  "dashboard-admin",
+  "dashboard-clinic",
+  "profile",
+  "booking",
+  "booking-success",
 ]);
 
 const App: React.FC = () => {
   const toast = useToast();
   const [view, setView] = useState<string>(() => {
     const v = getView();
-    if (v === 'reset-password') {
-      return getResetPasswordToken() ? 'reset-password' : 'home';
+    if (v === "reset-password") {
+      return getResetPasswordToken() ? "reset-password" : "home";
     }
-    const base = v && VALID_VIEWS.includes(v) ? v : 'home';
+    const base = v && VALID_VIEWS.includes(v) ? v : "home";
     return sanitizeViewForUser(base, getStoredUser());
   });
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [user, setUser] = useState<ApiAuthUser | null>(() => getStoredUser());
   const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [authModalTab, setAuthModalTab] = useState<'login' | 'register' | 'forgot'>('login');
+  const [authModalTab, setAuthModalTab] = useState<
+    "login" | "register" | "forgot"
+  >("login");
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   /** Guest bấm «Đặt lịch» — sau khi đăng nhập (BN) sẽ vào luồng booking. */
   const [pendingBookAfterLogin, setPendingBookAfterLogin] = useState(false);
   /** Guest bấm xem bác sĩ — sau khi đăng nhập BN sẽ vào profile (selectedDoctor đã set). */
-  const [pendingViewProfileAfterLogin, setPendingViewProfileAfterLogin] = useState(false);
+  const [pendingViewProfileAfterLogin, setPendingViewProfileAfterLogin] =
+    useState(false);
 
   const applyViewToHistory = (newView: string) => {
-    if (newView === 'home') {
-      window.history.replaceState(null, '', window.location.pathname || '/');
-    } else if (newView === 'search') {
-      replaceSearchParams({ view: 'search', page: 1, departmentId: null, token: null, q: null });
-    } else if (newView === 'departments') {
-      replaceSearchParams({ view: 'departments', token: null });
-    } else if (newView === 'reset-password') {
+    if (newView === "home") {
+      window.history.replaceState(null, "", window.location.pathname || "/");
+    } else if (newView === "search") {
+      replaceSearchParams({
+        view: "search",
+        page: 1,
+        departmentId: null,
+        token: null,
+        q: null,
+      });
+    } else if (newView === "departments") {
+      replaceSearchParams({ view: "departments", token: null });
+    } else if (newView === "reset-password") {
       const t = getResetPasswordToken();
-      replaceSearchParams({ view: 'reset-password', ...(t ? { token: t } : { token: null }) });
+      replaceSearchParams({
+        view: "reset-password",
+        ...(t ? { token: t } : { token: null }),
+      });
     } else {
       replaceSearchParams({ view: newView, token: null });
     }
@@ -97,8 +142,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const v = getView();
-    if (v === 'reset-password') {
-      setView(getResetPasswordToken() ? 'reset-password' : 'home');
+    if (v === "reset-password") {
+      setView(getResetPasswordToken() ? "reset-password" : "home");
       return;
     }
     if (v && VALID_VIEWS.includes(v)) {
@@ -113,8 +158,8 @@ const App: React.FC = () => {
   useEffect(() => {
     const handlePopState = () => {
       const v = getView();
-      if (v === 'reset-password') {
-        setView(getResetPasswordToken() ? 'reset-password' : 'home');
+      if (v === "reset-password") {
+        setView(getResetPasswordToken() ? "reset-password" : "home");
         return;
       }
       if (v && VALID_VIEWS.includes(v)) {
@@ -125,22 +170,22 @@ const App: React.FC = () => {
         }
       }
     };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   useEffect(() => {
-    window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
   }, [view]);
 
   const handleNavigate = (newView: string) => {
     const target = sanitizeViewForUser(newView, user);
     if (user && target !== newView) {
       const role = normalizedUserRole(user.role);
-      if (role === 'doctor') {
-        toast.info('Tài khoản bác sĩ chỉ dùng dashboard bác sĩ.');
-      } else if (role === 'admin') {
-        toast.info('Tài khoản quản trị chỉ dùng dashboard quản trị.');
+      if (role === "doctor") {
+        toast.info("Tài khoản bác sĩ chỉ dùng dashboard bác sĩ.");
+      } else if (role === "admin") {
+        toast.info("Tài khoản quản trị chỉ dùng dashboard quản trị.");
       }
     }
     setView(target);
@@ -152,8 +197,14 @@ const App: React.FC = () => {
       handleNavigate(defaultDashboardViewForUser(user));
       return;
     }
-    replaceSearchParams({ view: 'search', page: 1, departmentId, token: null, q: null });
-    setView('search');
+    replaceSearchParams({
+      view: "search",
+      page: 1,
+      departmentId,
+      token: null,
+      q: null,
+    });
+    setView("search");
   };
 
   const handleNavigateToSearch = useCallback(
@@ -164,51 +215,51 @@ const App: React.FC = () => {
       }
       const t = query?.trim();
       replaceSearchParams({
-        view: 'search',
+        view: "search",
         page: 1,
         departmentId: null,
         token: null,
         q: t ? t : null,
       });
-      setView('search');
+      setView("search");
     },
     [user],
   );
 
   const handleBook = (doctor: Doctor) => {
     if (user && !isPatientUser(user)) {
-      toast.info('Tài khoản bác sĩ không thể đặt lịch khám tại đây.');
+      toast.info("Tài khoản bác sĩ không thể đặt lịch khám tại đây.");
       handleNavigate(defaultDashboardViewForUser(user));
       return;
     }
     setSelectedDoctor(doctor);
     if (!user) {
       setPendingBookAfterLogin(true);
-      toast.info('Vui lòng đăng nhập để đặt lịch khám.');
-      setAuthModalTab('login');
+      toast.info("Vui lòng đăng nhập để đặt lịch khám.");
+      setAuthModalTab("login");
       setAuthModalOpen(true);
       return;
     }
-    setView('booking');
-    applyViewToHistory('booking');
+    setView("booking");
+    applyViewToHistory("booking");
   };
 
   const handleViewProfile = (doctor: Doctor) => {
     if (user && !isPatientUser(user)) {
-      toast.info('Tài khoản bác sĩ không dùng luồng đặt lịch bệnh nhân.');
+      toast.info("Tài khoản bác sĩ không dùng luồng đặt lịch bệnh nhân.");
       handleNavigate(defaultDashboardViewForUser(user));
       return;
     }
     setSelectedDoctor(doctor);
     if (!user) {
       setPendingViewProfileAfterLogin(true);
-      toast.info('Vui lòng đăng nhập để xem thông tin bác sĩ.');
-      setAuthModalTab('login');
+      toast.info("Vui lòng đăng nhập để xem thông tin bác sĩ.");
+      setAuthModalTab("login");
       setAuthModalOpen(true);
       return;
     }
-    setView('profile');
-    applyViewToHistory('profile');
+    setView("profile");
+    applyViewToHistory("profile");
   };
 
   const handleAuthSuccess = (token: string, u: ApiAuthUser) => {
@@ -217,16 +268,16 @@ const App: React.FC = () => {
     if (pendingBookAfterLogin) {
       setPendingBookAfterLogin(false);
       if (isPatientUser(u)) {
-        setView('booking');
-        applyViewToHistory('booking');
+        setView("booking");
+        applyViewToHistory("booking");
         return;
       }
     }
     if (pendingViewProfileAfterLogin) {
       setPendingViewProfileAfterLogin(false);
       if (isPatientUser(u)) {
-        setView('profile');
-        applyViewToHistory('profile');
+        setView("profile");
+        applyViewToHistory("profile");
         return;
       }
     }
@@ -252,9 +303,9 @@ const App: React.FC = () => {
     setPendingBookAfterLogin(false);
     setPendingViewProfileAfterLogin(false);
     setAuthModalOpen(false);
-    setView('home');
-    applyViewToHistory('home');
-    toast.success('Đã đăng xuất.');
+    setView("home");
+    applyViewToHistory("home");
+    toast.success("Đã đăng xuất.");
   };
 
   /**
@@ -263,27 +314,29 @@ const App: React.FC = () => {
    */
   useEffect(() => {
     if (!user && PROTECTED_VIEWS.has(view)) {
-      if (view === 'booking' || view === 'booking-success') {
-        toast.info('Vui lòng đăng nhập tài khoản bệnh nhân để đặt lịch / xem kết quả thanh toán.');
-        setAuthModalTab('login');
+      if (view === "booking" || view === "booking-success") {
+        toast.info(
+          "Vui lòng đăng nhập tài khoản bệnh nhân để đặt lịch / xem kết quả thanh toán.",
+        );
+        setAuthModalTab("login");
         setAuthModalOpen(true);
-      } else if (view === 'profile') {
-        toast.info('Vui lòng đăng nhập để xem thông tin bác sĩ.');
-        setAuthModalTab('login');
+      } else if (view === "profile") {
+        toast.info("Vui lòng đăng nhập để xem thông tin bác sĩ.");
+        setAuthModalTab("login");
         setAuthModalOpen(true);
       }
-      setView('home');
-      applyViewToHistory('home');
+      setView("home");
+      applyViewToHistory("home");
       return;
     }
     if (user) {
       const next = sanitizeViewForUser(view, user);
       if (next !== view) {
         const role = normalizedUserRole(user.role);
-        if (role === 'doctor') {
-          toast.info('Tài khoản bác sĩ chỉ truy cập dashboard bác sĩ.');
-        } else if (role === 'admin') {
-          toast.info('Tài khoản quản trị chỉ dùng dashboard quản trị.');
+        if (role === "doctor") {
+          toast.info("Tài khoản bác sĩ chỉ truy cập dashboard bác sĩ.");
+        } else if (role === "admin") {
+          toast.info("Tài khoản quản trị chỉ dùng dashboard quản trị.");
         }
         setView(next);
         applyViewToHistory(next);
@@ -297,10 +350,11 @@ const App: React.FC = () => {
    * useEffect bảo vệ ở trên sẽ tự đẩy về home nếu đang xem dashboard.
    */
   useEffect(() => {
-    const onAuthCleared = () => {
+    const onAuthCleared = (event: Event) => {
       setUser(null);
       setSelectedDoctor(null);
-      toast.error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+      if ((event as CustomEvent).detail?.reason !== "password_changed")
+        toast.error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
     };
     window.addEventListener(AUTH_CLEARED_EVENT, onAuthCleared);
     return () => window.removeEventListener(AUTH_CLEARED_EVENT, onAuthCleared);
@@ -308,7 +362,7 @@ const App: React.FC = () => {
 
   const renderView = () => {
     switch (view) {
-      case 'home':
+      case "home":
         return (
           <LandingPage
             onNavigate={handleNavigate}
@@ -318,16 +372,18 @@ const App: React.FC = () => {
             onViewProfile={handleViewProfile}
           />
         );
-      case 'search':
-        return <DoctorSearch onBook={handleBook} onViewProfile={handleViewProfile} />;
-      case 'departments':
+      case "search":
+        return (
+          <DoctorSearch onBook={handleBook} onViewProfile={handleViewProfile} />
+        );
+      case "departments":
         return (
           <DepartmentsList
             onNavigate={handleNavigate}
             onNavigateToSearchWithDept={handleNavigateToSearchWithDept}
           />
         );
-      case 'profile':
+      case "profile":
         return selectedDoctor ? (
           <DoctorProfile doctor={selectedDoctor} onBook={handleBook} />
         ) : (
@@ -339,16 +395,15 @@ const App: React.FC = () => {
             onViewProfile={handleViewProfile}
           />
         );
-      case 'booking':
+      case "booking":
         return selectedDoctor ? (
           <BookingFlow
             doctor={selectedDoctor}
-            onComplete={() => handleNavigate('dashboard')}
+            onComplete={() => handleNavigate("dashboard")}
             onPaymentSuccess={() => {
-              toast.success('Thanh toán cọc thành công. Lịch khám đã được xác nhận.');
-              handleNavigate('booking-success');
+              handleNavigate("booking-success");
             }}
-            onCancel={() => setView('search')}
+            onCancel={() => setView("search")}
           />
         ) : (
           <LandingPage
@@ -359,37 +414,51 @@ const App: React.FC = () => {
             onViewProfile={handleViewProfile}
           />
         );
-      case 'booking-success':
+      case "booking-success":
         return (
-          <section className="max-w-lg mx-auto px-4 py-12 text-center">
-            <div className="bg-green-50 border border-green-200 rounded-2xl p-8">
-              <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4 text-white text-3xl">✓</div>
-              <h1 className="text-xl font-bold text-slate-900 mb-2">Thanh toán cọc thành công</h1>
-              <p className="text-slate-600 text-sm mb-6">Lịch khám của bạn đã được xác nhận. Vui lòng đến đúng giờ hẹn.</p>
-              <button
-                onClick={() => handleNavigate('dashboard')}
-                className="px-6 py-3 bg-primary text-white rounded-xl font-bold hover:bg-primary/90 transition-colors"
-              >
-                Xem lịch đã đặt
-              </button>
-            </div>
-          </section>
+          <BookingResult onDashboard={() => handleNavigate("dashboard")} />
         );
-      case 'dashboard':
+      case "dashboard-clinic":
+        return user ? (
+          <ClinicWorkspace
+            user={user}
+            onBookWaitlist={async (doctorId) => {
+              try {
+                const doctor = await api.getDoctor(doctorId);
+                handleBook(mapDoctor(doctor));
+              } catch (e) {
+                toast.error(
+                  e instanceof Error ? e.message : "Không mở được lịch bác sĩ",
+                );
+              }
+            }}
+          />
+        ) : null;
+      case "dashboard":
         return (
           <Dashboard
-            key={user?.id ?? 'guest'}
+            key={user?.id ?? "guest"}
             user={user}
             onProfileUpdated={handleProfileUpdated}
             onNavigate={handleNavigate}
           />
         );
-      case 'dashboard-doctor':
-        return <DashboardDoctor key={user?.id ?? 'guest'} />;
-      case 'dashboard-admin':
-        return <DashboardAdmin key={user?.id ?? 'guest'} />;
-      case 'reset-password':
-        return <ResetPasswordView token={getResetPasswordToken()} onNavigate={handleNavigate} />;
+      case "dashboard-doctor":
+        return <DashboardDoctor key={user?.id ?? "guest"} />;
+      case "dashboard-admin":
+        return (
+          <>
+            <ScheduleManager />
+            <DashboardAdmin key={user?.id ?? "guest"} />
+          </>
+        );
+      case "reset-password":
+        return (
+          <ResetPasswordView
+            token={getResetPasswordToken()}
+            onNavigate={handleNavigate}
+          />
+        );
       default:
         return (
           <LandingPage
@@ -409,9 +478,37 @@ const App: React.FC = () => {
         onNavigate={handleNavigate}
         onNavigateToSearch={handleNavigateToSearch}
         user={user}
-        onOpenAuth={(tab) => { setAuthModalTab(tab); setAuthModalOpen(true); }}
+        onOpenAuth={(tab) => {
+          setAuthModalTab(tab);
+          setAuthModalOpen(true);
+        }}
         onLogout={() => setLogoutConfirmOpen(true)}
       />
+      {user && (
+        <nav
+          className="max-w-7xl mx-auto w-full flex flex-wrap gap-3 px-4 py-3"
+          aria-label="Nghiệp vụ phòng khám"
+        >
+          <button
+            className="rounded-lg border px-3 py-2"
+            onClick={() => handleNavigate(defaultDashboardViewForUser(user))}
+          >
+            Khu vực của tôi
+          </button>
+          <button
+            className="rounded-lg border px-3 py-2"
+            onClick={() => handleNavigate("dashboard-clinic")}
+          >
+            Phòng khám · Tiếp đón · Hồ sơ · Thu ngân
+          </button>
+          <details className="w-full">
+            <summary className="cursor-pointer">
+              Quyền sử dụng AI và dữ liệu
+            </summary>
+            <AiConsentPanel admin={user.role === "admin"} />
+          </details>
+        </nav>
+      )}
       <main className="flex-grow pb-20 md:pb-0">
         <AnimatePresence mode="wait">
           <motion.div
@@ -422,7 +519,15 @@ const App: React.FC = () => {
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
             className="w-full"
           >
-            {renderView()}
+            <Suspense
+              fallback={
+                <p className="p-8 text-center" role="status">
+                  Đang tải…
+                </p>
+              }
+            >
+              {renderView()}
+            </Suspense>
           </motion.div>
         </AnimatePresence>
       </main>
@@ -438,7 +543,10 @@ const App: React.FC = () => {
         initialTab={authModalTab}
       />
 
-      <ModalOverlay open={logoutConfirmOpen} onClose={() => setLogoutConfirmOpen(false)}>
+      <ModalOverlay
+        open={logoutConfirmOpen}
+        onClose={() => setLogoutConfirmOpen(false)}
+      >
         <div className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
           <ModalCloseButton onClose={() => setLogoutConfirmOpen(false)} />
           <h2 className="pr-10 text-lg font-bold text-slate-900">Đăng xuất?</h2>

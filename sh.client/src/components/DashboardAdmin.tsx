@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Building2,
   Stethoscope,
@@ -18,7 +18,7 @@ import {
   BellRing,
   Sparkles,
   Settings,
-} from 'lucide-react';
+} from "lucide-react";
 import {
   api,
   ApiRequestError,
@@ -32,44 +32,67 @@ import {
   type ApiAdminPaymentRow,
   type ApiAdminStatsOverview,
   type ApiAdminAiUsageStats,
-} from '../api/client';
-import { useToast } from '../contexts/ToastContext';
-import { AvatarPicker } from './AvatarPicker';
-import { validateStrongPassword } from '../utils/patient-register.validation';
-import { formatWorkdaysShortVi, listWeekdayIsoDatesInRange } from '../utils/weekdayCalendar';
-import { formatDoctorName } from '../utils/formatDoctorName';
-import { ModalCloseButton, ModalOverlay } from './ModalOverlay';
-import { AdsManager } from './admin/AdsManager';
-import { AiUsageDailyChart } from './admin/AiUsageDailyChart';
-import { ListPagination } from './ListPagination';
-import { usePagination, PAGE_SIZE } from '../utils/usePagination';
+} from "../api/client";
+import { useToast } from "../contexts/ToastContext";
+import { AvatarPicker } from "./AvatarPicker";
+import { validateStrongPassword } from "../utils/patient-register.validation";
+import {
+  formatWorkdaysShortVi,
+  listWeekdayIsoDatesInRange,
+} from "../utils/weekdayCalendar";
+import { formatDoctorName } from "../utils/formatDoctorName";
+import { ModalCloseButton, ModalOverlay } from "./ModalOverlay";
+import { AdsManager } from "./admin/AdsManager";
+import { AiUsageDailyChart } from "./admin/AiUsageDailyChart";
+import { ListPagination } from "./ListPagination";
+import { usePagination, PAGE_SIZE } from "../utils/usePagination";
 
-type Tab = 'departments' | 'leave' | 'users' | 'payments' | 'stats' | 'ads' | 'ai' | 'config';
-type UserRoleFilter = 'all' | 'user' | 'doctor' | 'admin';
-type AdminReportPreset = '7d' | '30d' | '90d' | 'custom';
+type Tab =
+  | "departments"
+  | "leave"
+  | "users"
+  | "payments"
+  | "stats"
+  | "ads"
+  | "ai"
+  | "config";
+type UserRoleFilter =
+  | "all"
+  | "user"
+  | "doctor"
+  | "admin"
+  | "receptionist"
+  | "cashier";
+type AdminReportPreset = "7d" | "30d" | "90d" | "custom";
 
 function isoDateOnlyLocal(d: Date): string {
   const tz = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
   return tz.toISOString().slice(0, 10);
 }
 
-function adminStatsPresetRange(preset: Exclude<AdminReportPreset, 'custom'>): { from: string; to: string } {
+function adminStatsPresetRange(preset: Exclude<AdminReportPreset, "custom">): {
+  from: string;
+  to: string;
+} {
   const today = isoDateOnlyLocal(new Date());
-  const days = preset === '7d' ? 7 : preset === '30d' ? 30 : 90;
+  const days = preset === "7d" ? 7 : preset === "30d" ? 30 : 90;
   const fromD = new Date();
   fromD.setDate(fromD.getDate() - (days - 1));
   return { from: isoDateOnlyLocal(fromD), to: today };
 }
 
-const ADMIN_STATS_PRESETS: { id: Exclude<AdminReportPreset, 'custom'>; label: string }[] = [
-  { id: '7d', label: '7 ngày' },
-  { id: '30d', label: '30 ngày' },
-  { id: '90d', label: '90 ngày' },
+const ADMIN_STATS_PRESETS: {
+  id: Exclude<AdminReportPreset, "custom">;
+  label: string;
+}[] = [
+  { id: "7d", label: "7 ngày" },
+  { id: "30d", label: "30 ngày" },
+  { id: "90d", label: "90 ngày" },
 ];
 
 function formatShortDateVi(iso: string): string {
-  const d = new Date(iso + 'T12:00:00');
-  return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+  const d = new Date(iso + "T12:00:00");
+  return d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
 }
 
 /** Nhãn trục ngang DD/MM từ YYYY-MM-DD */
@@ -79,49 +102,56 @@ function formatDayMonthVi(iso: string): string {
   return `${m[3]}/${m[2]}`;
 }
 
-const moneyFmtVnd = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' });
+const moneyFmtVnd = new Intl.NumberFormat("vi-VN", {
+  style: "currency",
+  currency: "VND",
+});
 
-function paymentStatusLabelVi(s: ApiAdminPaymentRow['status']): string {
-  if (s === 'paid') return 'Đã thanh toán';
-  if (s === 'pending') return 'Đang chờ';
-  if (s === 'failed') return 'Thất bại';
+function paymentStatusLabelVi(s: ApiAdminPaymentRow["status"]): string {
+  if (s === "paid") return "Đã thanh toán";
+  if (s === "pending") return "Đang chờ";
+  if (s === "failed") return "Thất bại";
   return s;
 }
 
 function appointmentStatusLabelVi(s: string): string {
-  if (s === 'pending') return 'Chờ xác nhận';
-  if (s === 'confirmed') return 'Đã xác nhận';
-  if (s === 'completed') return 'Hoàn thành';
-  if (s === 'cancelled') return 'Đã hủy';
+  if (s === "pending") return "Chờ xác nhận";
+  if (s === "confirmed") return "Đã xác nhận";
+  if (s === "completed") return "Hoàn thành";
+  if (s === "cancelled") return "Đã hủy";
   return s;
 }
 
 function paymentTypeLabelVi(t: string | null): string {
-  if (!t) return '—';
-  if (t === 'deposit') return 'Đặt cọc';
-  if (t === 'full') return 'Thanh toán đủ';
+  if (!t) return "—";
+  if (t === "deposit") return "Đặt cọc";
+  if (t === "full") return "Thanh toán đủ";
   return t;
 }
 
 function formatPaymentDtVi(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+  return d.toLocaleString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
 /** Đồng bộ cách so sánh tên khoa với sh.server DepartmentsService.deptNameCanonical */
 function canonicalDepartmentName(name: string): string {
-  return name.trim().replace(/\s+/g, ' ').normalize('NFKC').toLocaleLowerCase('vi-VN');
+  return name
+    .trim()
+    .replace(/\s+/g, " ")
+    .normalize("NFKC")
+    .toLocaleLowerCase("vi-VN");
 }
 
 export const DashboardAdmin: React.FC = () => {
   const toast = useToast();
-  const [tab, setTab] = useState<Tab>('departments');
+  const [tab, setTab] = useState<Tab>("departments");
   const [departments, setDepartments] = useState<ApiDepartment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -129,19 +159,19 @@ export const DashboardAdmin: React.FC = () => {
   // Khoa: form thêm/sửa
   const [deptFormOpen, setDeptFormOpen] = useState(false);
   const [editingDeptId, setEditingDeptId] = useState<string | null>(null);
-  const [deptName, setDeptName] = useState('');
-  const [deptDesc, setDeptDesc] = useState('');
+  const [deptName, setDeptName] = useState("");
+  const [deptDesc, setDeptDesc] = useState("");
   const [deptSubmitting, setDeptSubmitting] = useState(false);
   const [deptFieldError, setDeptFieldError] = useState<string | null>(null);
-  const [deptSearch, setDeptSearch] = useState('');
+  const [deptSearch, setDeptSearch] = useState("");
 
   // Bác sĩ: form thêm
   const [doctorFormOpen, setDoctorFormOpen] = useState(false);
   const [doctorForm, setDoctorForm] = useState<ApiCreateDoctorBody>({
-    email: '',
-    password: '',
-    fullName: '',
-    phone: '',
+    email: "",
+    password: "",
+    fullName: "",
+    phone: "",
     departmentId: null,
     university: null,
     bio: null,
@@ -149,23 +179,28 @@ export const DashboardAdmin: React.FC = () => {
   });
   const [doctorSubmitting, setDoctorSubmitting] = useState(false);
   const [doctorError, setDoctorError] = useState<string | null>(null);
-  const [doctorFieldErrors, setDoctorFieldErrors] = useState<Record<string, string> | null>(null);
+  const [doctorFieldErrors, setDoctorFieldErrors] = useState<Record<
+    string,
+    string
+  > | null>(null);
   const [doctorAvatarFile, setDoctorAvatarFile] = useState<File | null>(null);
 
   const [leaveList, setLeaveList] = useState<ApiDoctorLeaveRequest[]>([]);
   const [leaveLoading, setLeaveLoading] = useState(false);
-  const [leaveStatusFilter, setLeaveStatusFilter] = useState<'pending' | 'all'>('pending');
+  const [leaveStatusFilter, setLeaveStatusFilter] = useState<"pending" | "all">(
+    "pending",
+  );
 
   const [users, setUsers] = useState<ApiAuthUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
-  const [userRoleFilter, setUserRoleFilter] = useState<UserRoleFilter>('all');
+  const [userRoleFilter, setUserRoleFilter] = useState<UserRoleFilter>("all");
 
   const [editDoctorOpen, setEditDoctorOpen] = useState(false);
   const [editDoctorId, setEditDoctorId] = useState<string | null>(null);
   const [editDoctorForm, setEditDoctorForm] = useState<ApiUpdateDoctorBody>({
-    email: '',
-    fullName: '',
-    phone: '',
+    email: "",
+    fullName: "",
+    phone: "",
     departmentId: null,
     university: null,
     bio: null,
@@ -178,42 +213,62 @@ export const DashboardAdmin: React.FC = () => {
 
   const [pwdModalOpen, setPwdModalOpen] = useState(false);
   const [pwdDoctorId, setPwdDoctorId] = useState<string | null>(null);
-  const [pwdDoctorName, setPwdDoctorName] = useState('');
-  const [pwdNew, setPwdNew] = useState('');
-  const [pwdConfirm, setPwdConfirm] = useState('');
+  const [pwdDoctorName, setPwdDoctorName] = useState("");
+  const [pwdNew, setPwdNew] = useState("");
+  const [pwdConfirm, setPwdConfirm] = useState("");
   const [pwdError, setPwdError] = useState<string | null>(null);
-  const [pwdFieldErrors, setPwdFieldErrors] = useState<Record<string, string> | null>(null);
+  const [pwdFieldErrors, setPwdFieldErrors] = useState<Record<
+    string,
+    string
+  > | null>(null);
   const [pwdSubmitting, setPwdSubmitting] = useState(false);
 
   const [createUserOpen, setCreateUserOpen] = useState(false);
+  const [createUserRole, setCreateUserRole] = useState<
+    "user" | "admin" | "receptionist" | "cashier"
+  >("user");
   const [createUserForm, setCreateUserForm] = useState({
-    email: '',
-    password: '',
-    fullName: '',
-    phone: '',
+    email: "",
+    password: "",
+    fullName: "",
+    phone: "",
   });
   const [createUserError, setCreateUserError] = useState<string | null>(null);
   const [createUserSubmitting, setCreateUserSubmitting] = useState(false);
 
-  const [adminReportPreset, setAdminReportPreset] = useState<AdminReportPreset>('30d');
-  const [adminReportFrom, setAdminReportFrom] = useState(() => adminStatsPresetRange('30d').from);
-  const [adminReportTo, setAdminReportTo] = useState(() => adminStatsPresetRange('30d').to);
-  const [paymentStatusFilter, setPaymentStatusFilter] = useState<'all' | 'pending' | 'paid' | 'failed'>('all');
+  const [adminReportPreset, setAdminReportPreset] =
+    useState<AdminReportPreset>("30d");
+  const [adminReportFrom, setAdminReportFrom] = useState(
+    () => adminStatsPresetRange("30d").from,
+  );
+  const [adminReportTo, setAdminReportTo] = useState(
+    () => adminStatsPresetRange("30d").to,
+  );
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<
+    "all" | "pending" | "paid" | "failed"
+  >("all");
   const [adminPayments, setAdminPayments] = useState<ApiAdminPaymentRow[]>([]);
   const [adminPaymentsLoading, setAdminPaymentsLoading] = useState(false);
-  const [adminStats, setAdminStats] = useState<ApiAdminStatsOverview | null>(null);
+  const [adminStats, setAdminStats] = useState<ApiAdminStatsOverview | null>(
+    null,
+  );
   const [adminStatsLoading, setAdminStatsLoading] = useState(false);
 
   // AI cost tracking
   const [aiUsage, setAiUsage] = useState<ApiAdminAiUsageStats | null>(null);
   const [aiUsageLoading, setAiUsageLoading] = useState(false);
-  const [aiReportPreset, setAiReportPreset] = useState<AdminReportPreset>('30d');
-  const [aiReportFrom, setAiReportFrom] = useState(() => adminStatsPresetRange('30d').from);
-  const [aiReportTo, setAiReportTo] = useState(() => adminStatsPresetRange('30d').to);
+  const [aiReportPreset, setAiReportPreset] =
+    useState<AdminReportPreset>("30d");
+  const [aiReportFrom, setAiReportFrom] = useState(
+    () => adminStatsPresetRange("30d").from,
+  );
+  const [aiReportTo, setAiReportTo] = useState(
+    () => adminStatsPresetRange("30d").to,
+  );
 
   // Cấu hình hệ thống
   const [depositAmount, setDepositAmountState] = useState<number>(50_000);
-  const [depositInput, setDepositInput] = useState('50000');
+  const [depositInput, setDepositInput] = useState("50000");
   const [depositSaving, setDepositSaving] = useState(false);
 
   // Job nhắc lịch (gửi email H-24 / H-1) — admin có thể chạy thủ công.
@@ -227,31 +282,37 @@ export const DashboardAdmin: React.FC = () => {
     at: number;
   } | null>(null);
   // Form gửi mail TEST cho 1 appointment cụ thể (bỏ qua cửa sổ thời gian).
-  const [testApptId, setTestApptId] = useState('');
-  const [testKind, setTestKind] = useState<'h24' | 'h1'>('h1');
+  const [testApptId, setTestApptId] = useState("");
+  const [testKind, setTestKind] = useState<"h24" | "h1">("h1");
   const [testSending, setTestSending] = useState(false);
 
   const [lockConfirmOpen, setLockConfirmOpen] = useState(false);
-  const [lockTarget, setLockTarget] = useState<{ id: string; name: string; locked: boolean } | null>(null);
+  const [lockTarget, setLockTarget] = useState<{
+    id: string;
+    name: string;
+    locked: boolean;
+  } | null>(null);
   const [lockSubmitting, setLockSubmitting] = useState(false);
 
   const handleSendTestReminder = async () => {
     const id = testApptId.trim();
     if (!id) {
-      toast.error('Vui lòng nhập ID cuộc hẹn cần test.');
+      toast.error("Vui lòng nhập ID cuộc hẹn cần test.");
       return;
     }
     setTestSending(true);
     try {
       const res = await api.sendAppointmentReminderTest(id, testKind);
-      toast.success(`Đã gửi mail test (${res.kind.toUpperCase()}) đến ${res.to}.`);
+      toast.success(
+        `Đã gửi mail test (${res.kind.toUpperCase()}) đến ${res.to}.`,
+      );
     } catch (e) {
       toast.error(
         e instanceof ApiRequestError
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Không gửi được mail test.',
+            : "Không gửi được mail test.",
       );
     } finally {
       setTestSending(false);
@@ -267,7 +328,7 @@ export const DashboardAdmin: React.FC = () => {
       const totalSent = res.h24Sent + res.h1Sent;
       const totalFailed = res.h24Failed + res.h1Failed;
       if (totalSent === 0 && totalFailed === 0) {
-        toast.success('Không có cuộc hẹn nào cần nhắc trong khung giờ này.');
+        toast.success("Không có cuộc hẹn nào cần nhắc trong khung giờ này.");
       } else if (totalFailed === 0) {
         toast.success(
           `Đã gửi ${totalSent} email nhắc lịch (H-24: ${res.h24Sent}, H-1: ${res.h1Sent}).`,
@@ -283,7 +344,7 @@ export const DashboardAdmin: React.FC = () => {
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Không chạy được job nhắc lịch.',
+            : "Không chạy được job nhắc lịch.",
       );
     } finally {
       setReminderRunning(false);
@@ -294,7 +355,7 @@ export const DashboardAdmin: React.FC = () => {
 
   const loadLeaveRequests = () => {
     setLeaveLoading(true);
-    const q = leaveStatusFilter === 'pending' ? 'pending' : undefined;
+    const q = leaveStatusFilter === "pending" ? "pending" : undefined;
     api
       .getAdminLeaveRequests(q)
       .then(setLeaveList)
@@ -303,12 +364,15 @@ export const DashboardAdmin: React.FC = () => {
   };
 
   const loadDepartments = () => {
-    api.getDepartments().then(setDepartments).catch(() => setDepartments([]));
+    api
+      .getDepartments()
+      .then(setDepartments)
+      .catch(() => setDepartments([]));
   };
 
   const loadUsers = () => {
     setUsersLoading(true);
-    const role = userRoleFilter === 'all' ? undefined : userRoleFilter;
+    const role = userRoleFilter === "all" ? undefined : userRoleFilter;
     api
       .getAdminUsers(role)
       .then(setUsers)
@@ -322,24 +386,26 @@ export const DashboardAdmin: React.FC = () => {
     api
       .getDepartments()
       .then(setDepartments)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Không tải được dữ liệu'))
+      .catch((e) =>
+        setError(e instanceof Error ? e.message : "Không tải được dữ liệu"),
+      )
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
-    if (tab === 'departments') loadDepartments();
-    else if (tab === 'leave') loadLeaveRequests();
-    else if (tab === 'users') loadUsers();
+    if (tab === "departments") loadDepartments();
+    else if (tab === "leave") loadLeaveRequests();
+    else if (tab === "users") loadUsers();
   }, [tab, leaveStatusFilter, userRoleFilter]);
 
   useEffect(() => {
-    if (tab !== 'payments') return;
+    if (tab !== "payments") return;
     setAdminPaymentsLoading(true);
     api
       .getAdminPayments({
         from: adminReportFrom,
         to: adminReportTo,
-        status: paymentStatusFilter === 'all' ? undefined : paymentStatusFilter,
+        status: paymentStatusFilter === "all" ? undefined : paymentStatusFilter,
       })
       .then(setAdminPayments)
       .catch(() => setAdminPayments([]))
@@ -347,7 +413,7 @@ export const DashboardAdmin: React.FC = () => {
   }, [tab, adminReportFrom, adminReportTo, paymentStatusFilter]);
 
   useEffect(() => {
-    if (tab !== 'stats') return;
+    if (tab !== "stats") return;
     setAdminStatsLoading(true);
     api
       .getAdminStatsOverview(adminReportFrom, adminReportTo)
@@ -357,7 +423,7 @@ export const DashboardAdmin: React.FC = () => {
   }, [tab, adminReportFrom, adminReportTo]);
 
   useEffect(() => {
-    if (tab !== 'ai') return;
+    if (tab !== "ai") return;
     setAiUsageLoading(true);
     api
       .getAdminAiUsageStats(aiReportFrom, aiReportTo)
@@ -367,8 +433,9 @@ export const DashboardAdmin: React.FC = () => {
   }, [tab, aiReportFrom, aiReportTo]);
 
   useEffect(() => {
-    if (tab !== 'config') return;
-    api.getAdminConfig()
+    if (tab !== "config") return;
+    api
+      .getAdminConfig()
       .then((r) => {
         setDepositAmountState(r.depositAmount);
         setDepositInput(String(r.depositAmount));
@@ -376,7 +443,7 @@ export const DashboardAdmin: React.FC = () => {
       .catch(() => {});
   }, [tab]);
 
-  const applyAiReportPreset = (p: Exclude<AdminReportPreset, 'custom'>) => {
+  const applyAiReportPreset = (p: Exclude<AdminReportPreset, "custom">) => {
     const r = adminStatsPresetRange(p);
     setAiReportPreset(p);
     setAiReportFrom(r.from);
@@ -384,12 +451,12 @@ export const DashboardAdmin: React.FC = () => {
   };
 
   const setAiReportCustom = (patch: { from?: string; to?: string }) => {
-    setAiReportPreset('custom');
+    setAiReportPreset("custom");
     if (patch.from !== undefined) setAiReportFrom(patch.from);
     if (patch.to !== undefined) setAiReportTo(patch.to);
   };
 
-  const applyAdminReportPreset = (p: Exclude<AdminReportPreset, 'custom'>) => {
+  const applyAdminReportPreset = (p: Exclude<AdminReportPreset, "custom">) => {
     const r = adminStatsPresetRange(p);
     setAdminReportPreset(p);
     setAdminReportFrom(r.from);
@@ -397,29 +464,37 @@ export const DashboardAdmin: React.FC = () => {
   };
 
   const setAdminReportCustom = (next: { from?: string; to?: string }) => {
-    setAdminReportPreset('custom');
+    setAdminReportPreset("custom");
     if (next.from !== undefined) setAdminReportFrom(next.from);
     if (next.to !== undefined) setAdminReportTo(next.to);
   };
 
   const filteredDepartments = useMemo(() => {
-    const q = deptSearch.trim().toLocaleLowerCase('vi-VN');
+    const q = deptSearch.trim().toLocaleLowerCase("vi-VN");
     if (!q) return departments;
     return departments.filter((d) => {
-      const name = d.name.toLocaleLowerCase('vi-VN');
-      const desc = (d.description ?? '').toLocaleLowerCase('vi-VN');
+      const name = d.name.toLocaleLowerCase("vi-VN");
+      const desc = (d.description ?? "").toLocaleLowerCase("vi-VN");
       return name.includes(q) || desc.includes(q);
     });
   }, [departments, deptSearch]);
 
-  const deptPagination = usePagination(filteredDepartments, PAGE_SIZE.departments, deptSearch);
+  const deptPagination = usePagination(
+    filteredDepartments,
+    PAGE_SIZE.departments,
+    deptSearch,
+  );
   const usersPagination = usePagination(users, PAGE_SIZE.table, userRoleFilter);
   const paymentsPagination = usePagination(
     adminPayments,
     PAGE_SIZE.table,
     `${paymentStatusFilter}-${adminReportFrom}-${adminReportTo}`,
   );
-  const leavePagination = usePagination(leaveList, PAGE_SIZE.table, leaveStatusFilter);
+  const leavePagination = usePagination(
+    leaveList,
+    PAGE_SIZE.table,
+    leaveStatusFilter,
+  );
 
   const maxRevenueDay = useMemo(() => {
     if (!adminStats?.revenueByDay?.length) return 0;
@@ -433,7 +508,11 @@ export const DashboardAdmin: React.FC = () => {
     return Math.max(1, Math.ceil(n / 14));
   }, [adminStats?.revenueByDay?.length]);
 
-  const showAdminChartTick = (index: number, total: number, stride: number): boolean => {
+  const showAdminChartTick = (
+    index: number,
+    total: number,
+    stride: number,
+  ): boolean => {
     if (total <= 0) return false;
     if (total <= 18) return true;
     if (index === 0 || index === total - 1) return true;
@@ -442,8 +521,8 @@ export const DashboardAdmin: React.FC = () => {
 
   const openAddDept = () => {
     setEditingDeptId(null);
-    setDeptName('');
-    setDeptDesc('');
+    setDeptName("");
+    setDeptDesc("");
     setDeptFieldError(null);
     setDeptFormOpen(true);
   };
@@ -451,7 +530,7 @@ export const DashboardAdmin: React.FC = () => {
   const openEditDept = (d: ApiDepartment) => {
     setEditingDeptId(d.id);
     setDeptName(d.name);
-    setDeptDesc(d.description ?? '');
+    setDeptDesc(d.description ?? "");
     setDeptFieldError(null);
     setDeptFormOpen(true);
   };
@@ -464,7 +543,7 @@ export const DashboardAdmin: React.FC = () => {
   const submitDept = async () => {
     const name = deptName.trim();
     if (!name) {
-      const msg = 'Tên khoa không được để trống.';
+      const msg = "Tên khoa không được để trống.";
       setDeptFieldError(msg);
       toast.error(msg);
       return;
@@ -474,7 +553,7 @@ export const DashboardAdmin: React.FC = () => {
       (d) => d.id !== editingDeptId && canonicalDepartmentName(d.name) === key,
     );
     if (dupLocal) {
-      const msg = 'Tên khoa đã tồn tại.';
+      const msg = "Tên khoa đã tồn tại.";
       setDeptFieldError(msg);
       toast.error(msg);
       return;
@@ -484,17 +563,27 @@ export const DashboardAdmin: React.FC = () => {
     setDeptSubmitting(true);
     try {
       if (editingDeptId) {
-        await api.updateDepartment(editingDeptId, { name, description: deptDesc.trim() || null });
-        toast.success('Đã cập nhật khoa.');
+        await api.updateDepartment(editingDeptId, {
+          name,
+          description: deptDesc.trim() || null,
+        });
+        toast.success("Đã cập nhật khoa.");
       } else {
-        await api.createDepartment({ name, description: deptDesc.trim() || null });
-        toast.success('Đã thêm khoa mới.');
+        await api.createDepartment({
+          name,
+          description: deptDesc.trim() || null,
+        });
+        toast.success("Đã thêm khoa mới.");
       }
       closeDeptForm();
       loadDepartments();
     } catch (e) {
       const msg =
-        e instanceof ApiRequestError ? e.message : e instanceof Error ? e.message : 'Lỗi lưu khoa';
+        e instanceof ApiRequestError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : "Lỗi lưu khoa";
       setDeptFieldError(msg);
       toast.error(msg);
     } finally {
@@ -503,22 +592,22 @@ export const DashboardAdmin: React.FC = () => {
   };
 
   const deleteDept = async (id: string) => {
-    if (!window.confirm('Bạn có chắc muốn xóa khoa này?')) return;
+    if (!window.confirm("Bạn có chắc muốn xóa khoa này?")) return;
     try {
       await api.deleteDepartment(id);
-      toast.success('Đã xóa khoa.');
+      toast.success("Đã xóa khoa.");
       loadDepartments();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Không xóa được khoa');
+      setError(e instanceof Error ? e.message : "Không vô hiệu hóa được khoa");
     }
   };
 
   const openAddDoctor = () => {
     setDoctorForm({
-      email: '',
-      password: '',
-      fullName: '',
-      phone: '',
+      email: "",
+      password: "",
+      fullName: "",
+      phone: "",
       departmentId: departments[0]?.id ?? null,
       university: null,
       bio: null,
@@ -533,31 +622,37 @@ export const DashboardAdmin: React.FC = () => {
   const approveLeave = async (id: string) => {
     try {
       await api.approveLeaveRequest(id);
-      toast.success('Đã duyệt nghỉ phép. Các ca trống trong khoảng ngày đã chuyển sang nghỉ phép.');
+      toast.success(
+        "Đã duyệt nghỉ phép. Các ca trống trong khoảng ngày đã chuyển sang nghỉ phép.",
+      );
       loadLeaveRequests();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Không duyệt được');
+      toast.error(e instanceof Error ? e.message : "Không duyệt được");
     }
   };
 
   const rejectLeave = async (id: string) => {
-    if (!window.confirm('Từ chối đơn nghỉ phép này?')) return;
+    if (!window.confirm("Từ chối đơn nghỉ phép này?")) return;
     try {
       await api.rejectLeaveRequest(id);
-      toast.success('Đã từ chối đơn.');
+      toast.success("Đã từ chối đơn.");
       loadLeaveRequests();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Không từ chối được');
+      toast.error(e instanceof Error ? e.message : "Không từ chối được");
     }
   };
 
   const submitDoctor = async () => {
-    if (!doctorForm.email.trim() || !doctorForm.password || !doctorForm.fullName.trim()) {
-      setDoctorError('Vui lòng nhập email, mật khẩu và họ tên.');
+    if (
+      !doctorForm.email.trim() ||
+      !doctorForm.password ||
+      !doctorForm.fullName.trim()
+    ) {
+      setDoctorError("Vui lòng nhập email, mật khẩu và họ tên.");
       return;
     }
     if (doctorForm.experienceYears != null && doctorForm.experienceYears < 0) {
-      setDoctorError('Số năm kinh nghiệm không được âm.');
+      setDoctorError("Số năm kinh nghiệm không được âm.");
       return;
     }
     setDoctorSubmitting(true);
@@ -577,13 +672,19 @@ export const DashboardAdmin: React.FC = () => {
       );
       setDoctorFormOpen(false);
       loadUsers();
-      toast.success('Đã thêm bác sĩ và tạo lịch trống (T2–T6).');
+      toast.success("Đã thêm bác sĩ và tạo lịch trống (T2–T6).");
     } catch (e) {
-      if (e instanceof ApiRequestError && e.fieldErrors && Object.keys(e.fieldErrors).length > 0) {
+      if (
+        e instanceof ApiRequestError &&
+        e.fieldErrors &&
+        Object.keys(e.fieldErrors).length > 0
+      ) {
         setDoctorFieldErrors(e.fieldErrors);
         setDoctorError(null);
       } else {
-        setDoctorError(e instanceof Error ? e.message : 'Không tạo được tài khoản bác sĩ');
+        setDoctorError(
+          e instanceof Error ? e.message : "Không tạo được tài khoản bác sĩ",
+        );
       }
     } finally {
       setDoctorSubmitting(false);
@@ -598,7 +699,7 @@ export const DashboardAdmin: React.FC = () => {
       setEditDoctorForm({
         email: user.email,
         fullName: user.fullName,
-        phone: user.phone ?? '',
+        phone: user.phone ?? "",
         departmentId: user.departmentId ?? null,
         university: user.university ?? null,
         bio: user.bio ?? null,
@@ -608,15 +709,21 @@ export const DashboardAdmin: React.FC = () => {
       setEditDoctorAvatar(null);
       setEditDoctorOpen(true);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Không tải được thông tin bác sĩ');
+      toast.error(
+        e instanceof Error ? e.message : "Không tải được thông tin bác sĩ",
+      );
     } finally {
       setEditDoctorLoading(false);
     }
   };
 
   const submitEditDoctor = async () => {
-    if (!editDoctorId || !editDoctorForm.email.trim() || !editDoctorForm.fullName.trim()) {
-      setEditDoctorError('Vui lòng nhập email và họ tên.');
+    if (
+      !editDoctorId ||
+      !editDoctorForm.email.trim() ||
+      !editDoctorForm.fullName.trim()
+    ) {
+      setEditDoctorError("Vui lòng nhập email và họ tên.");
       return;
     }
     setEditDoctorSubmitting(true);
@@ -635,9 +742,11 @@ export const DashboardAdmin: React.FC = () => {
       );
       setEditDoctorOpen(false);
       loadUsers();
-      toast.success('Đã cập nhật thông tin bác sĩ.');
+      toast.success("Đã cập nhật thông tin bác sĩ.");
     } catch (e) {
-      setEditDoctorError(e instanceof Error ? e.message : 'Không cập nhật được');
+      setEditDoctorError(
+        e instanceof Error ? e.message : "Không cập nhật được",
+      );
     } finally {
       setEditDoctorSubmitting(false);
     }
@@ -650,7 +759,8 @@ export const DashboardAdmin: React.FC = () => {
     const fe: Record<string, string> = {};
     const pe = validateStrongPassword(pwdNew);
     if (pe) fe.password = pe;
-    if (pwdNew !== pwdConfirm) fe.confirmPassword = 'Mật khẩu nhập lại không khớp';
+    if (pwdNew !== pwdConfirm)
+      fe.confirmPassword = "Mật khẩu nhập lại không khớp";
     if (Object.keys(fe).length > 0) {
       setPwdFieldErrors(fe);
       return;
@@ -664,8 +774,10 @@ export const DashboardAdmin: React.FC = () => {
       toast.success(res.message);
       setPwdModalOpen(false);
     } catch (e) {
-      if (e instanceof ApiRequestError && e.fieldErrors) setPwdFieldErrors(e.fieldErrors);
-      else setPwdError(e instanceof Error ? e.message : 'Không đổi được mật khẩu');
+      if (e instanceof ApiRequestError && e.fieldErrors)
+        setPwdFieldErrors(e.fieldErrors);
+      else
+        setPwdError(e instanceof Error ? e.message : "Không đổi được mật khẩu");
     } finally {
       setPwdSubmitting(false);
     }
@@ -673,16 +785,18 @@ export const DashboardAdmin: React.FC = () => {
 
   const openPwdAnyUser = (u: ApiAuthUser) => {
     setPwdDoctorId(u.id);
-    setPwdDoctorName(u.role === 'doctor' ? formatDoctorName(u.fullName) : u.fullName);
-    setPwdNew('');
-    setPwdConfirm('');
+    setPwdDoctorName(
+      u.role === "doctor" ? formatDoctorName(u.fullName) : u.fullName,
+    );
+    setPwdNew("");
+    setPwdConfirm("");
     setPwdError(null);
     setPwdFieldErrors(null);
     setPwdModalOpen(true);
   };
 
   const openCreateManagedUser = () => {
-    setCreateUserForm({ email: '', password: '', fullName: '', phone: '' });
+    setCreateUserForm({ email: "", password: "", fullName: "", phone: "" });
     setCreateUserError(null);
     setCreateUserOpen(true);
   };
@@ -692,7 +806,7 @@ export const DashboardAdmin: React.FC = () => {
     const pw = createUserForm.password;
     const fn = createUserForm.fullName.trim();
     if (!em || !pw || !fn) {
-      setCreateUserError('Nhập đủ email, mật khẩu và họ tên.');
+      setCreateUserError("Nhập đủ email, mật khẩu và họ tên.");
       return;
     }
     const pe = validateStrongPassword(pw);
@@ -707,32 +821,41 @@ export const DashboardAdmin: React.FC = () => {
         email: em,
         password: pw,
         fullName: fn,
-        phone: createUserForm.phone.trim() === '' ? null : createUserForm.phone.trim(),
-        role: 'user',
+        phone:
+          createUserForm.phone.trim() === ""
+            ? null
+            : createUserForm.phone.trim(),
+        role: createUserRole,
       });
-      toast.success('Đã tạo tài khoản bệnh nhân.');
+      toast.success("Đã tạo tài khoản.");
       setCreateUserOpen(false);
       loadUsers();
     } catch (e) {
-      setCreateUserError(e instanceof Error ? e.message : 'Không tạo được tài khoản');
+      setCreateUserError(
+        e instanceof Error ? e.message : "Không tạo được tài khoản",
+      );
     } finally {
       setCreateUserSubmitting(false);
     }
   };
 
   const deleteManagedUserRow = async (u: ApiAuthUser) => {
-    if (!window.confirm(`Xóa tài khoản ${u.email}? Thao tác không hoàn tác.`)) return;
+    if (
+      !window.confirm(
+        `Vô hiệu hóa tài khoản ${u.email}? Hồ sơ và giao dịch được giữ nguyên.`,
+      )
+    )
+      return;
     try {
       await api.adminDeleteUser(u.id);
-      toast.success('Đã xóa người dùng.');
+      toast.success("Đã vô hiệu hóa tài khoản.");
       loadUsers();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Không xóa được');
+      toast.error(e instanceof Error ? e.message : "Không vô hiệu hóa được");
     }
   };
 
   const toggleDoctorLock = (u: ApiAuthUser) => {
-    if (u.role !== 'doctor') return;
     setLockTarget({
       id: u.id,
       name: u.fullName,
@@ -751,12 +874,15 @@ export const DashboardAdmin: React.FC = () => {
     if (!lockTarget) return;
     setLockSubmitting(true);
     try {
-      const res = await api.setDoctorLocked(lockTarget.id, lockTarget.locked);
+      const res = await api.setUserLocked(lockTarget.id, lockTarget.locked);
       toast.success(res.message);
-      closeLockConfirm();
+      setLockConfirmOpen(false);
+      setLockTarget(null);
       loadUsers();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Không cập nhật được trạng thái khóa');
+      toast.error(
+        e instanceof Error ? e.message : "Không cập nhật được trạng thái khóa",
+      );
     } finally {
       setLockSubmitting(false);
     }
@@ -772,7 +898,9 @@ export const DashboardAdmin: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <h1 className="text-2xl font-bold text-slate-900 mb-6">Dashboard quản trị</h1>
+      <h1 className="text-2xl font-bold text-slate-900 mb-6">
+        Dashboard quản trị
+      </h1>
       {error && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
           {error}
@@ -782,14 +910,14 @@ export const DashboardAdmin: React.FC = () => {
       <div className="flex gap-1 border-b border-slate-200 mb-6 overflow-x-auto pb-px scrollbar-none">
         {(
           [
-            { id: 'departments', icon: Building2, label: 'Quản lý khoa' },
-            { id: 'users', icon: Users, label: 'Người dùng' },
-            { id: 'payments', icon: CreditCard, label: 'Thanh toán' },
-            { id: 'stats', icon: BarChart3, label: 'Báo cáo' },
-            { id: 'ads', icon: Megaphone, label: 'Quảng cáo' },
-            { id: 'ai', icon: Sparkles, label: 'Chi phí AI' },
-            { id: 'leave', icon: Palmtree, label: 'Nghỉ phép BS' },
-            { id: 'config', icon: Settings, label: 'Cấu hình' },
+            { id: "departments", icon: Building2, label: "Quản lý khoa" },
+            { id: "users", icon: Users, label: "Người dùng" },
+            { id: "payments", icon: CreditCard, label: "Thanh toán" },
+            { id: "stats", icon: BarChart3, label: "Báo cáo" },
+            { id: "ads", icon: Megaphone, label: "Quảng cáo" },
+            { id: "ai", icon: Sparkles, label: "Chi phí AI" },
+            { id: "leave", icon: Palmtree, label: "Nghỉ phép BS" },
+            { id: "config", icon: Settings, label: "Cấu hình" },
           ] as { id: Tab; icon: React.ElementType; label: string }[]
         ).map(({ id, icon: Icon, label }) => (
           <button
@@ -797,8 +925,8 @@ export const DashboardAdmin: React.FC = () => {
             onClick={() => setTab(id)}
             className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium whitespace-nowrap rounded-t-lg border-b-2 transition-colors shrink-0 ${
               tab === id
-                ? 'border-primary text-primary bg-primary/5'
-                : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                ? "border-primary text-primary bg-primary/5"
+                : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100"
             }`}
           >
             <Icon className="w-4 h-4 shrink-0" />
@@ -807,14 +935,14 @@ export const DashboardAdmin: React.FC = () => {
         ))}
       </div>
 
-      {tab === 'departments' && (
+      {tab === "departments" && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
             <h2 className="text-lg font-bold text-slate-900">
               Danh sách khoa
               <span className="ml-2 text-sm font-medium text-slate-500">
                 ({filteredDepartments.length}
-                {deptSearch.trim() ? ` / ${departments.length}` : ''})
+                {deptSearch.trim() ? ` / ${departments.length}` : ""})
               </span>
             </h2>
             <div className="flex flex-wrap items-center gap-2">
@@ -839,9 +967,13 @@ export const DashboardAdmin: React.FC = () => {
             </div>
           </div>
           {departments.length === 0 ? (
-            <p className="p-8 text-center text-slate-500 text-sm">Chưa có khoa nào. Bấm «Thêm khoa» để tạo.</p>
+            <p className="p-8 text-center text-slate-500 text-sm">
+              Chưa có khoa nào. Bấm «Thêm khoa» để tạo.
+            </p>
           ) : filteredDepartments.length === 0 ? (
-            <p className="p-8 text-center text-slate-500 text-sm">Không tìm thấy khoa phù hợp.</p>
+            <p className="p-8 text-center text-slate-500 text-sm">
+              Không tìm thấy khoa phù hợp.
+            </p>
           ) : (
             <ul className="divide-y divide-slate-100">
               {deptPagination.paginatedItems.map((d) => (
@@ -850,9 +982,14 @@ export const DashboardAdmin: React.FC = () => {
                   className="px-4 py-3 flex items-center justify-between gap-3 hover:bg-slate-50/50"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-slate-900 truncate">{d.name}</p>
+                    <p className="font-semibold text-slate-900 truncate">
+                      {d.name}
+                    </p>
                     {d.description ? (
-                      <p className="text-xs text-slate-500 truncate mt-0.5" title={d.description}>
+                      <p
+                        className="text-xs text-slate-500 truncate mt-0.5"
+                        title={d.description}
+                      >
                         {d.description}
                       </p>
                     ) : null}
@@ -894,10 +1031,12 @@ export const DashboardAdmin: React.FC = () => {
         </div>
       )}
 
-      {tab === 'users' && (
+      {tab === "users" && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="p-4 border-b border-slate-100 flex flex-wrap justify-between items-center gap-3">
-            <h2 className="text-lg font-bold text-slate-900">Danh sách người dùng</h2>
+            <h2 className="text-lg font-bold text-slate-900">
+              Danh sách người dùng
+            </h2>
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -913,19 +1052,40 @@ export const DashboardAdmin: React.FC = () => {
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary/90 shadow-sm"
               >
                 <Plus className="w-4 h-4" />
-                Thêm bệnh nhân
+                Thêm tài khoản
               </button>
               <div className="flex flex-wrap gap-2">
-                {(['all', 'user', 'doctor', 'admin'] as const).map((r) => (
+                {(
+                  [
+                    "all",
+                    "user",
+                    "doctor",
+                    "admin",
+                    "receptionist",
+                    "cashier",
+                  ] as const
+                ).map((r) => (
                   <button
                     key={r}
                     type="button"
                     onClick={() => setUserRoleFilter(r)}
                     className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${
-                      userRoleFilter === r ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      userRoleFilter === r
+                        ? "bg-primary text-white"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                     }`}
                   >
-                    {r === 'all' ? 'Tất cả' : r === 'user' ? 'Bệnh nhân' : r === 'doctor' ? 'Bác sĩ' : 'Admin'}
+                    {r === "all"
+                      ? "Tất cả"
+                      : r === "user"
+                        ? "Bệnh nhân"
+                        : r === "doctor"
+                          ? "Bác sĩ"
+                          : r === "receptionist"
+                            ? "Lễ tân"
+                            : r === "cashier"
+                              ? "Thu ngân"
+                              : "Admin"}
                   </button>
                 ))}
               </div>
@@ -936,18 +1096,32 @@ export const DashboardAdmin: React.FC = () => {
               <Loader2 className="w-10 h-10 text-primary animate-spin" />
             </div>
           ) : users.length === 0 ? (
-            <p className="p-8 text-center text-slate-500 text-sm">Không có người dùng.</p>
+            <p className="p-8 text-center text-slate-500 text-sm">
+              Không có người dùng.
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="bg-slate-50 text-left">
-                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Họ tên</th>
-                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Email</th>
-                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">SĐT</th>
-                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Vai trò</th>
-                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Ngày tạo</th>
-                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase text-right">Thao tác</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">
+                      Họ tên
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">
+                      Email
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">
+                      SĐT
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">
+                      Vai trò
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">
+                      Ngày tạo
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase text-right">
+                      Thao tác
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -955,22 +1129,36 @@ export const DashboardAdmin: React.FC = () => {
                     <tr
                       key={u.id}
                       className={`hover:bg-slate-50/50 ${
-                        u.role === 'doctor' && u.isLocked
-                          ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-200'
-                          : ''
+                        u.role === "doctor" && u.isLocked
+                          ? "bg-amber-50/60 ring-1 ring-inset ring-amber-200"
+                          : ""
                       }`}
                     >
                       <td className="px-4 py-3 font-medium text-slate-900">
-                        {u.role === 'doctor' ? formatDoctorName(u.fullName) : u.fullName}
+                        {u.role === "doctor"
+                          ? formatDoctorName(u.fullName)
+                          : u.fullName}
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-600">{u.email}</td>
-                      <td className="px-4 py-3 text-sm text-slate-500">{u.phone ?? '—'}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600">
+                        {u.email}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-500">
+                        {u.phone ?? "—"}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-xs font-bold px-2 py-1 rounded-md bg-slate-100 text-slate-700">
-                            {u.role === 'doctor' ? 'Bác sĩ' : u.role === 'admin' ? 'Quản trị' : 'Bệnh nhân'}
+                            {u.role === "doctor"
+                              ? "Bác sĩ"
+                              : u.role === "admin"
+                                ? "Quản trị"
+                                : u.role === "receptionist"
+                                  ? "Lễ tân"
+                                  : u.role === "cashier"
+                                    ? "Thu ngân"
+                                    : "Bệnh nhân"}
                           </span>
-                          {u.role === 'doctor' && u.isLocked ? (
+                          {u.role === "doctor" && u.isLocked ? (
                             <span className="text-[11px] font-extrabold px-2 py-1 rounded-md bg-amber-100 text-amber-900 border border-amber-200">
                               Đã khóa
                             </span>
@@ -978,23 +1166,28 @@ export const DashboardAdmin: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-500">
-                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString('vi-VN') : '—'}
+                        {u.createdAt
+                          ? new Date(u.createdAt).toLocaleDateString("vi-VN")
+                          : "—"}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap justify-end gap-1">
-                          {u.role === 'doctor' ? (
+                          {u.role === "doctor" ? (
                             <button
                               type="button"
-                              onClick={() => void openEditDoctor({
-                                id: u.id,
-                                departmentId: u.departmentId ?? null,
-                                fullName: u.fullName,
-                                bio: u.bio ?? null,
-                                experienceYears: u.experienceYears ?? null,
-                                avatarUrl: u.avatarUrl ?? null,
-                                createdAt: u.createdAt ?? new Date().toISOString(),
-                                university: u.university ?? null,
-                              })}
+                              onClick={() =>
+                                void openEditDoctor({
+                                  id: u.id,
+                                  departmentId: u.departmentId ?? null,
+                                  fullName: u.fullName,
+                                  bio: u.bio ?? null,
+                                  experienceYears: u.experienceYears ?? null,
+                                  avatarUrl: u.avatarUrl ?? null,
+                                  createdAt:
+                                    u.createdAt ?? new Date().toISOString(),
+                                  university: u.university ?? null,
+                                })
+                              }
                               className="p-2 text-slate-500 hover:text-primary hover:bg-primary/10 rounded-lg"
                               title="Sửa thông tin bác sĩ"
                             >
@@ -1009,26 +1202,34 @@ export const DashboardAdmin: React.FC = () => {
                           >
                             <KeyRound className="w-4 h-4" />
                           </button>
-                          {u.role === 'doctor' ? (
+                          {
                             <button
                               type="button"
                               onClick={() => void toggleDoctorLock(u)}
                               className={`p-2 rounded-lg ${
                                 u.isLocked
-                                  ? 'text-amber-700 hover:bg-amber-50'
-                                  : 'text-slate-500 hover:text-amber-700 hover:bg-amber-50'
+                                  ? "text-amber-700 hover:bg-amber-50"
+                                  : "text-slate-500 hover:text-amber-700 hover:bg-amber-50"
                               }`}
-                              title={u.isLocked ? 'Đang khóa — bấm để mở khóa' : 'Bấm để khóa đăng nhập'}
+                              title={
+                                u.isLocked
+                                  ? "Đang khóa — bấm để mở khóa"
+                                  : "Bấm để khóa đăng nhập"
+                              }
                             >
                               <BellRing className="w-4 h-4" />
                             </button>
-                          ) : null}
+                          }
                           <button
                             type="button"
                             disabled={u.id === currentAdminId}
                             onClick={() => deleteManagedUserRow(u)}
                             className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-40 disabled:pointer-events-none"
-                            title={u.id === currentAdminId ? 'Không thể xóa chính mình' : 'Xóa'}
+                            title={
+                              u.id === currentAdminId
+                                ? "Không thể vô hiệu hóa chính mình"
+                                : "Vô hiệu hóa"
+                            }
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -1055,11 +1256,13 @@ export const DashboardAdmin: React.FC = () => {
         </div>
       )}
 
-      {tab === 'payments' && (
+      {tab === "payments" && (
         <div className="space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Khoảng thời gian</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                Khoảng thời gian
+              </span>
               <div
                 className="flex p-0.5 rounded-lg bg-slate-200/80 border border-slate-200/60 gap-0.5"
                 role="group"
@@ -1072,8 +1275,8 @@ export const DashboardAdmin: React.FC = () => {
                     onClick={() => applyAdminReportPreset(p.id)}
                     className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
                       adminReportPreset === p.id
-                        ? 'bg-white text-slate-900 shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
                     {p.label}
@@ -1086,7 +1289,9 @@ export const DashboardAdmin: React.FC = () => {
                   type="date"
                   value={adminReportFrom}
                   max={adminReportTo}
-                  onChange={(e) => setAdminReportCustom({ from: e.target.value })}
+                  onChange={(e) =>
+                    setAdminReportCustom({ from: e.target.value })
+                  }
                   className="px-2 py-1 border border-slate-200 rounded-lg text-xs bg-white focus:ring-1 focus:ring-primary focus:border-primary"
                 />
               </label>
@@ -1102,13 +1307,15 @@ export const DashboardAdmin: React.FC = () => {
               </label>
             </div>
             <div className="flex flex-wrap gap-2 items-center">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Trạng thái TT</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                Trạng thái TT
+              </span>
               {(
                 [
-                  ['all', 'Tất cả'],
-                  ['pending', 'Đang chờ'],
-                  ['paid', 'Đã thanh toán'],
-                  ['failed', 'Thất bại'],
+                  ["all", "Tất cả"],
+                  ["pending", "Đang chờ"],
+                  ["paid", "Đã thanh toán"],
+                  ["failed", "Thất bại"],
                 ] as const
               ).map(([id, label]) => (
                 <button
@@ -1116,7 +1323,9 @@ export const DashboardAdmin: React.FC = () => {
                   type="button"
                   onClick={() => setPaymentStatusFilter(id)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
-                    paymentStatusFilter === id ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    paymentStatusFilter === id
+                      ? "bg-primary text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   }`}
                 >
                   {label}
@@ -1127,9 +1336,13 @@ export const DashboardAdmin: React.FC = () => {
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900">Giao dịch thanh toán</h2>
+              <h2 className="text-lg font-bold text-slate-900">
+                Giao dịch thanh toán
+              </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Theo thời điểm tạo giao dịch ({formatShortDateVi(adminReportFrom)} – {formatShortDateVi(adminReportTo)})
+                Theo thời điểm tạo giao dịch (
+                {formatShortDateVi(adminReportFrom)} –{" "}
+                {formatShortDateVi(adminReportTo)})
               </p>
             </div>
             {adminPaymentsLoading ? (
@@ -1137,7 +1350,9 @@ export const DashboardAdmin: React.FC = () => {
                 <Loader2 className="w-10 h-10 text-primary animate-spin" />
               </div>
             ) : adminPayments.length === 0 ? (
-              <p className="p-8 text-center text-slate-500 text-sm">Không có giao dịch trong khoảng đã chọn.</p>
+              <p className="p-8 text-center text-slate-500 text-sm">
+                Không có giao dịch trong khoảng đã chọn.
+              </p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -1149,14 +1364,24 @@ export const DashboardAdmin: React.FC = () => {
                       <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase min-w-[10rem]">
                         Bệnh nhân
                       </th>
-                      <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Bác sĩ</th>
+                      <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">
+                        Bác sĩ
+                      </th>
                       <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
                         Lịch khám
                       </th>
-                      <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase text-right">Số tiền</th>
-                      <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Loại</th>
-                      <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">TT thanh toán</th>
-                      <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">TT lịch</th>
+                      <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase text-right">
+                        Số tiền
+                      </th>
+                      <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">
+                        Loại
+                      </th>
+                      <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">
+                        TT thanh toán
+                      </th>
+                      <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">
+                        TT lịch
+                      </th>
                       <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase whitespace-nowrap">
                         PayOS
                       </th>
@@ -1165,35 +1390,49 @@ export const DashboardAdmin: React.FC = () => {
                   <tbody className="divide-y divide-slate-100">
                     {paymentsPagination.paginatedItems.map((row) => (
                       <tr key={row.id} className="hover:bg-slate-50/50">
-                        <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{formatPaymentDtVi(row.createdAt)}</td>
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-slate-900">{row.patient.fullName}</div>
-                          <div className="text-xs text-slate-500">{row.patient.email}</div>
+                        <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
+                          {formatPaymentDtVi(row.createdAt)}
                         </td>
-                        <td className="px-4 py-3 text-slate-800">{formatDoctorName(row.doctor.fullName)}</td>
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-slate-900">
+                            {row.patient.fullName}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {row.patient.email}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-800">
+                          {formatDoctorName(row.doctor.fullName)}
+                        </td>
                         <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
-                          {row.slotTime ? formatPaymentDtVi(row.slotTime) : '—'}
+                          {row.slotTime ? formatPaymentDtVi(row.slotTime) : "—"}
                         </td>
                         <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-900">
                           {moneyFmtVnd.format(row.amount)}
                         </td>
-                        <td className="px-4 py-3 text-slate-600">{paymentTypeLabelVi(row.paymentType)}</td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {paymentTypeLabelVi(row.paymentType)}
+                        </td>
                         <td className="px-4 py-3">
                           <span
                             className={`text-xs font-bold px-2 py-1 rounded-md ${
-                              row.status === 'paid'
-                                ? 'bg-emerald-100 text-emerald-900'
-                                : row.status === 'pending'
-                                  ? 'bg-amber-100 text-amber-900'
-                                  : 'bg-red-100 text-red-900'
+                              row.status === "paid"
+                                ? "bg-emerald-100 text-emerald-900"
+                                : row.status === "pending"
+                                  ? "bg-amber-100 text-amber-900"
+                                  : "bg-red-100 text-red-900"
                             }`}
                           >
                             {paymentStatusLabelVi(row.status)}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-600 text-xs">{appointmentStatusLabelVi(row.appointmentStatus)}</td>
+                        <td className="px-4 py-3 text-slate-600 text-xs">
+                          {appointmentStatusLabelVi(row.appointmentStatus)}
+                        </td>
                         <td className="px-4 py-3 text-xs text-slate-500 tabular-nums">
-                          {row.payosOrderCode != null ? row.payosOrderCode : '—'}
+                          {row.payosOrderCode != null
+                            ? row.payosOrderCode
+                            : "—"}
                         </td>
                       </tr>
                     ))}
@@ -1217,7 +1456,7 @@ export const DashboardAdmin: React.FC = () => {
         </div>
       )}
 
-      {tab === 'stats' && (
+      {tab === "stats" && (
         <div className="space-y-4">
           {/* Công cụ vận hành: chạy thủ công job nhắc lịch (cron đã chạy mỗi 5 phút). */}
           <div className="rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 space-y-3">
@@ -1229,18 +1468,24 @@ export const DashboardAdmin: React.FC = () => {
                     Nhắc lịch khám tự động
                   </div>
                   <p className="text-xs text-amber-800/90 mt-0.5">
-                    Hệ thống tự gửi email H-24 và H-1 cho cuộc hẹn đã thanh toán cọc (5 phút/lần).
-                    Bấm để chạy ngay không cần chờ.
+                    Hệ thống tự gửi email H-24 và H-1 cho cuộc hẹn đã thanh toán
+                    cọc (5 phút/lần). Bấm để chạy ngay không cần chờ.
                   </p>
                   {reminderResult ? (
                     <p className="text-xs text-amber-800/80 mt-1">
-                      Lần chạy gần nhất:{' '}
-                      <strong>{reminderResult.h24Sent + reminderResult.h1Sent}</strong> email gửi
-                      (H-24: {reminderResult.h24Sent}, H-1: {reminderResult.h1Sent})
+                      Lần chạy gần nhất:{" "}
+                      <strong>
+                        {reminderResult.h24Sent + reminderResult.h1Sent}
+                      </strong>{" "}
+                      email gửi (H-24: {reminderResult.h24Sent}, H-1:{" "}
+                      {reminderResult.h1Sent})
                       {reminderResult.h24Failed + reminderResult.h1Failed > 0
                         ? `, lỗi: ${reminderResult.h24Failed + reminderResult.h1Failed}`
-                        : ''}
-                      {reminderResult.skipped > 0 ? `, bỏ qua: ${reminderResult.skipped}` : ''}.
+                        : ""}
+                      {reminderResult.skipped > 0
+                        ? `, bỏ qua: ${reminderResult.skipped}`
+                        : ""}
+                      .
                     </p>
                   ) : null}
                 </div>
@@ -1278,18 +1523,18 @@ export const DashboardAdmin: React.FC = () => {
                 className="flex-1 min-w-[260px] px-3 py-1.5 border border-amber-200 rounded-lg text-xs bg-white focus:ring-1 focus:ring-amber-500 focus:border-amber-500 font-mono"
               />
               <div className="flex p-0.5 rounded-lg bg-amber-100 border border-amber-200/60 gap-0.5 shrink-0">
-                {(['h1', 'h24'] as const).map((k) => (
+                {(["h1", "h24"] as const).map((k) => (
                   <button
                     key={k}
                     type="button"
                     onClick={() => setTestKind(k)}
                     className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
                       testKind === k
-                        ? 'bg-white text-amber-900 shadow-sm'
-                        : 'text-amber-700 hover:text-amber-900'
+                        ? "bg-white text-amber-900 shadow-sm"
+                        : "text-amber-700 hover:text-amber-900"
                     }`}
                   >
-                    {k === 'h1' ? 'H-1' : 'H-24'}
+                    {k === "h1" ? "H-1" : "H-24"}
                   </button>
                 ))}
               </div>
@@ -1305,12 +1550,13 @@ export const DashboardAdmin: React.FC = () => {
                     Đang gửi...
                   </>
                 ) : (
-                  'Gửi mail test'
+                  "Gửi mail test"
                 )}
               </button>
             </div>
             <p className="text-[11px] text-amber-700/80">
-              Mail test có prefix <code>[TEST]</code> trong tiêu đề. Bỏ qua cửa sổ thời gian và idempotency — bấm nhiều lần đều gửi.
+              Mail test có prefix <code>[TEST]</code> trong tiêu đề. Bỏ qua cửa
+              sổ thời gian và idempotency — bấm nhiều lần đều gửi.
             </p>
           </div>
 
@@ -1327,8 +1573,8 @@ export const DashboardAdmin: React.FC = () => {
                   onClick={() => applyAdminReportPreset(p.id)}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
                     adminReportPreset === p.id
-                      ? 'bg-white text-slate-900 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
                   }`}
                 >
                   {p.label}
@@ -1336,7 +1582,9 @@ export const DashboardAdmin: React.FC = () => {
               ))}
               <span
                 className={`px-3 py-1.5 rounded-md text-xs font-semibold ${
-                  adminReportPreset === 'custom' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+                  adminReportPreset === "custom"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500"
                 }`}
               >
                 Tùy chọn
@@ -1349,7 +1597,9 @@ export const DashboardAdmin: React.FC = () => {
                   type="date"
                   value={adminReportFrom}
                   max={adminReportTo}
-                  onChange={(e) => setAdminReportCustom({ from: e.target.value })}
+                  onChange={(e) =>
+                    setAdminReportCustom({ from: e.target.value })
+                  }
                   className="px-2 py-1 border border-slate-200 rounded-lg text-xs bg-white focus:ring-1 focus:ring-primary focus:border-primary"
                 />
               </label>
@@ -1386,12 +1636,17 @@ export const DashboardAdmin: React.FC = () => {
                   </div>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Giao dịch</div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Giao dịch
+                  </div>
                   <div className="text-lg font-bold tabular-nums text-slate-900 mt-0.5">
-                    {adminStats.paymentCounts.paid + adminStats.paymentCounts.pending + adminStats.paymentCounts.failed}
+                    {adminStats.paymentCounts.paid +
+                      adminStats.paymentCounts.pending +
+                      adminStats.paymentCounts.failed}
                   </div>
                   <div className="text-[10px] text-slate-500 mt-0.5 leading-snug">
-                    Đã TT {adminStats.paymentCounts.paid} · Chờ {adminStats.paymentCounts.pending} · Lỗi{' '}
+                    Đã TT {adminStats.paymentCounts.paid} · Chờ{" "}
+                    {adminStats.paymentCounts.pending} · Lỗi{" "}
                     {adminStats.paymentCounts.failed}
                   </div>
                 </div>
@@ -1402,7 +1657,9 @@ export const DashboardAdmin: React.FC = () => {
                   <div className="text-lg font-bold tabular-nums text-sky-950 mt-0.5">
                     {adminStats.distinctPatientsWithAppointmentInRange}
                   </div>
-                  <div className="text-[10px] text-sky-900/70">Distinct theo lịch hẹn tạo trong kỳ</div>
+                  <div className="text-[10px] text-sky-900/70">
+                    Distinct theo lịch hẹn tạo trong kỳ
+                  </div>
                 </div>
                 <div className="rounded-xl border border-violet-200/80 bg-violet-50/90 px-3 py-2.5 shadow-sm">
                   <div className="text-[10px] font-semibold uppercase tracking-wider text-violet-800/80">
@@ -1419,7 +1676,9 @@ export const DashboardAdmin: React.FC = () => {
                   <div className="text-lg font-bold tabular-nums text-slate-900 mt-0.5">
                     {adminStats.patientAccountsTotal}
                   </div>
-                  <div className="text-[10px] text-slate-500">Toàn hệ thống</div>
+                  <div className="text-[10px] text-slate-500">
+                    Toàn hệ thống
+                  </div>
                 </div>
                 <div className="rounded-xl border border-amber-200/80 bg-amber-50/90 px-3 py-2.5 shadow-sm">
                   <div className="text-[10px] font-semibold uppercase tracking-wider text-amber-900/80">
@@ -1428,24 +1687,32 @@ export const DashboardAdmin: React.FC = () => {
                   <div className="text-lg font-bold tabular-nums text-amber-950 mt-0.5">
                     {adminStats.newPatientRegistrationsInRange}
                   </div>
-                  <div className="text-[10px] text-amber-900/70">Trong kỳ đã chọn</div>
+                  <div className="text-[10px] text-amber-900/70">
+                    Trong kỳ đã chọn
+                  </div>
                 </div>
               </div>
 
               <section className="rounded-2xl border border-slate-200 bg-gradient-to-b from-slate-50/90 to-white p-4 sm:p-5 shadow-sm">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3 mb-4">
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900">Doanh thu theo ngày (đã thanh toán)</h3>
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Doanh thu theo ngày (đã thanh toán)
+                    </h3>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Đúng theo bộ lọc ngày phía trên ·{' '}
+                      Đúng theo bộ lọc ngày phía trên ·{" "}
                       <span className="font-medium text-slate-700 tabular-nums">
-                        {formatDayMonthVi(adminStats.range.from)} → {formatDayMonthVi(adminStats.range.to)}
+                        {formatDayMonthVi(adminStats.range.from)} →{" "}
+                        {formatDayMonthVi(adminStats.range.to)}
                       </span>
-                      <span className="text-slate-400"> ({adminStats.revenueByDay.length} ngày)</span>
+                      <span className="text-slate-400">
+                        {" "}
+                        ({adminStats.revenueByDay.length} ngày)
+                      </span>
                       {maxRevenueDay > 0 ? (
                         <>
-                          {' '}
-                          · ngày cao nhất:{' '}
+                          {" "}
+                          · ngày cao nhất:{" "}
                           <span className="font-semibold tabular-nums text-emerald-800">
                             {moneyFmtVnd.format(maxRevenueDay)}
                           </span>
@@ -1485,12 +1752,12 @@ export const DashboardAdmin: React.FC = () => {
                               <div
                                 className={`w-full rounded-t-[4px] transition-[height,opacity] ${
                                   hasRev
-                                    ? 'bg-gradient-to-t from-emerald-800 via-emerald-500 to-emerald-400 shadow-[0_-1px_8px_rgba(16,185,129,0.25)]'
-                                    : 'bg-slate-200/70'
+                                    ? "bg-gradient-to-t from-emerald-800 via-emerald-500 to-emerald-400 shadow-[0_-1px_8px_rgba(16,185,129,0.25)]"
+                                    : "bg-slate-200/70"
                                 }`}
                                 style={{
-                                  height: hasRev ? `${pct}%` : '3px',
-                                  minHeight: hasRev ? '8px' : '3px',
+                                  height: hasRev ? `${pct}%` : "3px",
+                                  minHeight: hasRev ? "8px" : "3px",
                                   opacity: hasRev ? 1 : 0.45,
                                 }}
                               />
@@ -1500,7 +1767,9 @@ export const DashboardAdmin: React.FC = () => {
                       </div>
                       <div className="mt-2 flex justify-between text-[10px] tabular-nums text-slate-400 px-0.5">
                         <span>{formatDayMonthVi(adminStats.range.from)}</span>
-                        <span className="hidden sm:inline">Theo giờ Việt Nam · cột = một ngày</span>
+                        <span className="hidden sm:inline">
+                          Theo giờ Việt Nam · cột = một ngày
+                        </span>
                         <span>{formatDayMonthVi(adminStats.range.to)}</span>
                       </div>
                     </div>
@@ -1511,13 +1780,22 @@ export const DashboardAdmin: React.FC = () => {
                       }}
                     >
                       {adminStats.revenueByDay.map((d, i, arr) => (
-                        <div key={`lbl-${d.date}`} className="min-w-0 text-center">
-                          {showAdminChartTick(i, arr.length, adminChartLabelStride) ? (
+                        <div
+                          key={`lbl-${d.date}`}
+                          className="min-w-0 text-center"
+                        >
+                          {showAdminChartTick(
+                            i,
+                            arr.length,
+                            adminChartLabelStride,
+                          ) ? (
                             <span className="inline-block max-w-full truncate text-[9px] leading-tight text-slate-500 tabular-nums sm:text-[10px]">
                               {formatDayMonthVi(d.date)}
                             </span>
                           ) : (
-                            <span className="inline-block h-3 w-px opacity-0">.</span>
+                            <span className="inline-block h-3 w-px opacity-0">
+                              .
+                            </span>
                           )}
                         </div>
                       ))}
@@ -1530,9 +1808,9 @@ export const DashboardAdmin: React.FC = () => {
         </div>
       )}
 
-      {tab === 'ads' && <AdsManager />}
+      {tab === "ads" && <AdsManager />}
 
-      {tab === 'ai' && (
+      {tab === "ai" && (
         <div className="space-y-4">
           {/* Filter */}
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
@@ -1548,8 +1826,8 @@ export const DashboardAdmin: React.FC = () => {
                   onClick={() => applyAiReportPreset(p.id)}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
                     aiReportPreset === p.id
-                      ? 'bg-white text-slate-900 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
                   }`}
                 >
                   {p.label}
@@ -1557,7 +1835,9 @@ export const DashboardAdmin: React.FC = () => {
               ))}
               <span
                 className={`px-3 py-1.5 rounded-md text-xs font-semibold ${
-                  aiReportPreset === 'custom' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+                  aiReportPreset === "custom"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500"
                 }`}
               >
                 Tùy chọn
@@ -1607,7 +1887,11 @@ export const DashboardAdmin: React.FC = () => {
                     ${aiUsage.totals.costUsd.toFixed(4)}
                   </div>
                   <div className="text-[10px] text-violet-700 mt-0.5">
-                    ≈ {Math.round(aiUsage.totals.costUsd * 25500).toLocaleString('vi-VN')} đ
+                    ≈{" "}
+                    {Math.round(aiUsage.totals.costUsd * 25500).toLocaleString(
+                      "vi-VN",
+                    )}{" "}
+                    đ
                   </div>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
@@ -1615,7 +1899,7 @@ export const DashboardAdmin: React.FC = () => {
                     Số request
                   </div>
                   <div className="text-lg font-bold tabular-nums text-slate-900 mt-0.5 leading-tight">
-                    {aiUsage.totals.requests.toLocaleString('vi-VN')}
+                    {aiUsage.totals.requests.toLocaleString("vi-VN")}
                   </div>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
@@ -1623,7 +1907,7 @@ export const DashboardAdmin: React.FC = () => {
                     Token input
                   </div>
                   <div className="text-lg font-bold tabular-nums text-slate-900 mt-0.5 leading-tight">
-                    {aiUsage.totals.promptTokens.toLocaleString('vi-VN')}
+                    {aiUsage.totals.promptTokens.toLocaleString("vi-VN")}
                   </div>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
@@ -1631,7 +1915,7 @@ export const DashboardAdmin: React.FC = () => {
                     Token output
                   </div>
                   <div className="text-lg font-bold tabular-nums text-slate-900 mt-0.5 leading-tight">
-                    {aiUsage.totals.completionTokens.toLocaleString('vi-VN')}
+                    {aiUsage.totals.completionTokens.toLocaleString("vi-VN")}
                   </div>
                 </div>
               </div>
@@ -1640,7 +1924,9 @@ export const DashboardAdmin: React.FC = () => {
               <div className="grid lg:grid-cols-2 gap-4">
                 <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                   <div className="px-4 py-3 border-b border-slate-100">
-                    <h3 className="text-sm font-bold text-slate-900">Theo tính năng</h3>
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Theo tính năng
+                    </h3>
                   </div>
                   {aiUsage.byFeature.length === 0 ? (
                     <div className="px-4 py-8 text-center text-sm text-slate-500">
@@ -1666,13 +1952,18 @@ export const DashboardAdmin: React.FC = () => {
                       </thead>
                       <tbody>
                         {aiUsage.byFeature.map((r) => (
-                          <tr key={r.feature} className="border-t border-slate-100">
+                          <tr
+                            key={r.feature}
+                            className="border-t border-slate-100"
+                          >
                             <td className="px-4 py-2 font-mono text-xs text-slate-700">
                               {r.feature}
                             </td>
-                            <td className="px-4 py-2 text-right tabular-nums">{r.requests}</td>
+                            <td className="px-4 py-2 text-right tabular-nums">
+                              {r.requests}
+                            </td>
                             <td className="px-4 py-2 text-right tabular-nums text-slate-600">
-                              {r.totalTokens.toLocaleString('vi-VN')}
+                              {r.totalTokens.toLocaleString("vi-VN")}
                             </td>
                             <td className="px-4 py-2 text-right tabular-nums font-semibold">
                               ${r.costUsd.toFixed(4)}
@@ -1686,7 +1977,9 @@ export const DashboardAdmin: React.FC = () => {
 
                 <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                   <div className="px-4 py-3 border-b border-slate-100">
-                    <h3 className="text-sm font-bold text-slate-900">Theo model</h3>
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Theo model
+                    </h3>
                   </div>
                   {aiUsage.byModel.length === 0 ? (
                     <div className="px-4 py-8 text-center text-sm text-slate-500">
@@ -1712,13 +2005,18 @@ export const DashboardAdmin: React.FC = () => {
                       </thead>
                       <tbody>
                         {aiUsage.byModel.map((r) => (
-                          <tr key={r.model} className="border-t border-slate-100">
+                          <tr
+                            key={r.model}
+                            className="border-t border-slate-100"
+                          >
                             <td className="px-4 py-2 font-mono text-xs text-slate-700">
                               {r.model}
                             </td>
-                            <td className="px-4 py-2 text-right tabular-nums">{r.requests}</td>
+                            <td className="px-4 py-2 text-right tabular-nums">
+                              {r.requests}
+                            </td>
                             <td className="px-4 py-2 text-right tabular-nums text-slate-600">
-                              {r.totalTokens.toLocaleString('vi-VN')}
+                              {r.totalTokens.toLocaleString("vi-VN")}
                             </td>
                             <td className="px-4 py-2 text-right tabular-nums font-semibold">
                               ${r.costUsd.toFixed(4)}
@@ -1733,41 +2031,52 @@ export const DashboardAdmin: React.FC = () => {
 
               {/* By day — bar chart đơn giản */}
               <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
-                <h3 className="text-sm font-bold text-slate-900 mb-3">Chi phí theo ngày (USD)</h3>
+                <h3 className="text-sm font-bold text-slate-900 mb-3">
+                  Chi phí theo ngày (USD)
+                </h3>
                 {aiUsage.byDay.length === 0 ? (
-                  <div className="text-center text-sm text-slate-500 py-6">Chưa có dữ liệu.</div>
+                  <div className="text-center text-sm text-slate-500 py-6">
+                    Chưa có dữ liệu.
+                  </div>
                 ) : (
                   <AiUsageDailyChart data={aiUsage.byDay} />
                 )}
               </div>
 
               <p className="text-[11px] text-slate-500">
-                Tỉ giá quy đổi VND tham chiếu (~25.500 đ/USD), không phải tỉ giá hối đoái thực. Xem chi tiết phí trên dashboard OpenAI.
+                Tỉ giá quy đổi VND tham chiếu (~25.500 đ/USD), không phải tỉ giá
+                hối đoái thực. Xem chi tiết phí trên dashboard OpenAI.
               </p>
             </>
           )}
         </div>
       )}
 
-      {tab === 'leave' && (
+      {tab === "leave" && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="p-4 border-b border-slate-100 flex flex-wrap justify-between items-center gap-3">
-            <h2 className="text-lg font-bold text-slate-900">Đơn xin nghỉ phép</h2>
+            <h2 className="text-lg font-bold text-slate-900">
+              Đơn xin nghỉ phép
+            </h2>
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setLeaveStatusFilter('pending')}
+                onClick={() => setLeaveStatusFilter("pending")}
                 className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${
-                  leaveStatusFilter === 'pending' ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600'
+                  leaveStatusFilter === "pending"
+                    ? "bg-primary text-white"
+                    : "bg-slate-100 text-slate-600"
                 }`}
               >
                 Chờ duyệt
               </button>
               <button
                 type="button"
-                onClick={() => setLeaveStatusFilter('all')}
+                onClick={() => setLeaveStatusFilter("all")}
                 className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${
-                  leaveStatusFilter === 'all' ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600'
+                  leaveStatusFilter === "all"
+                    ? "bg-primary text-white"
+                    : "bg-slate-100 text-slate-600"
                 }`}
               >
                 Tất cả
@@ -1779,19 +2088,29 @@ export const DashboardAdmin: React.FC = () => {
               <Loader2 className="w-10 h-10 text-primary animate-spin" />
             </div>
           ) : leaveList.length === 0 ? (
-            <p className="p-8 text-center text-slate-500 text-sm">Không có đơn nào.</p>
+            <p className="p-8 text-center text-slate-500 text-sm">
+              Không có đơn nào.
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="bg-slate-50 text-left">
-                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Bác sĩ</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">
+                      Bác sĩ
+                    </th>
                     <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase min-w-[12rem]">
                       Ngày làm việc (T2–T6)
                     </th>
-                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Lý do</th>
-                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Trạng thái</th>
-                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase w-40">Thao tác</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">
+                      Lý do
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">
+                      Trạng thái
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase w-40">
+                      Thao tác
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1801,54 +2120,67 @@ export const DashboardAdmin: React.FC = () => {
                         ? r.workdaysInRange
                         : listWeekdayIsoDatesInRange(r.startDate, r.endDate);
                     return (
-                    <tr key={r.id} className="hover:bg-slate-50/50">
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-slate-900">{formatDoctorName(r.doctorName)}</div>
-                        <div className="text-xs text-slate-500">{r.doctorEmail}</div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-700 max-w-[20rem]">
-                        <div>{formatWorkdaysShortVi(workdays)}</div>
-                        <div className="text-xs text-slate-400 mt-0.5">Đơn ghi: {r.startDate} → {r.endDate}</div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-600 max-w-[12rem] truncate" title={r.reason ?? undefined}>
-                        {r.reason ?? '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`text-xs font-bold px-2 py-1 rounded-md ${
-                            r.status === 'pending'
-                              ? 'bg-amber-100 text-amber-900'
-                              : r.status === 'approved'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-slate-200 text-slate-700'
-                          }`}
-                        >
-                          {r.status === 'pending' ? 'Chờ duyệt' : r.status === 'approved' ? 'Đã duyệt' : 'Từ chối'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {r.status === 'pending' ? (
-                          <div className="flex flex-wrap gap-1">
-                            <button
-                              type="button"
-                              onClick={() => approveLeave(r.id)}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700"
-                            >
-                              <Check className="w-3.5 h-3.5" /> Duyệt
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => rejectLeave(r.id)}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-50"
-                            >
-                              <X className="w-3.5 h-3.5" /> Từ chối
-                            </button>
+                      <tr key={r.id} className="hover:bg-slate-50/50">
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-slate-900">
+                            {formatDoctorName(r.doctorName)}
                           </div>
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
-                        )}
-                      </td>
-                    </tr>
+                          <div className="text-xs text-slate-500">
+                            {r.doctorEmail}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-700 max-w-[20rem]">
+                          <div>{formatWorkdaysShortVi(workdays)}</div>
+                          <div className="text-xs text-slate-400 mt-0.5">
+                            Đơn ghi: {r.startDate} → {r.endDate}
+                          </div>
+                        </td>
+                        <td
+                          className="px-4 py-3 text-sm text-slate-600 max-w-[12rem] truncate"
+                          title={r.reason ?? undefined}
+                        >
+                          {r.reason ?? "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`text-xs font-bold px-2 py-1 rounded-md ${
+                              r.status === "pending"
+                                ? "bg-amber-100 text-amber-900"
+                                : r.status === "approved"
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-slate-200 text-slate-700"
+                            }`}
+                          >
+                            {r.status === "pending"
+                              ? "Chờ duyệt"
+                              : r.status === "approved"
+                                ? "Đã duyệt"
+                                : "Từ chối"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {r.status === "pending" ? (
+                            <div className="flex flex-wrap gap-1">
+                              <button
+                                type="button"
+                                onClick={() => approveLeave(r.id)}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700"
+                              >
+                                <Check className="w-3.5 h-3.5" /> Duyệt
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => rejectLeave(r.id)}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-50"
+                              >
+                                <X className="w-3.5 h-3.5" /> Từ chối
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-400">—</span>
+                          )}
+                        </td>
+                      </tr>
                     );
                   })}
                 </tbody>
@@ -1870,7 +2202,7 @@ export const DashboardAdmin: React.FC = () => {
         </div>
       )}
 
-      {tab === 'config' && (
+      {tab === "config" && (
         <div className="space-y-4 max-w-2xl">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
@@ -1878,19 +2210,26 @@ export const DashboardAdmin: React.FC = () => {
                 <CreditCard className="w-5 h-5 text-primary" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-slate-900">Tiền cọc đặt lịch</h3>
-                <p className="text-xs text-slate-500">Áp dụng cho mọi lịch hẹn mới tạo</p>
+                <h3 className="text-sm font-bold text-slate-900">
+                  Tiền cọc đặt lịch
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Áp dụng cho mọi lịch hẹn mới tạo
+                </p>
               </div>
               <div className="ml-auto text-right">
                 <p className="text-xs text-slate-400">Hiện tại</p>
                 <p className="text-lg font-black text-primary tabular-nums">
-                  {depositAmount.toLocaleString('vi-VN')}đ
+                  {depositAmount.toLocaleString("vi-VN")}đ
                 </p>
               </div>
             </div>
             <div className="px-6 py-5">
               <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                Số tiền cọc mới <span className="text-slate-400 font-normal">(VND, tối thiểu 1.000)</span>
+                Số tiền cọc mới{" "}
+                <span className="text-slate-400 font-normal">
+                  (VND, tối thiểu 1.000)
+                </span>
               </label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
@@ -1903,17 +2242,19 @@ export const DashboardAdmin: React.FC = () => {
                     onChange={(e) => {
                       const raw = e.target.value;
                       // Chặn số âm ngay tại input
-                      if (raw !== '' && Number(raw) < 0) return;
+                      if (raw !== "" && Number(raw) < 0) return;
                       setDepositInput(raw);
                     }}
                     onKeyDown={(e) => {
                       // Chặn gõ dấu trừ
-                      if (e.key === '-') e.preventDefault();
+                      if (e.key === "-") e.preventDefault();
                     }}
                     className="w-full pl-3 pr-10 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-primary focus:border-primary"
                     placeholder="50000"
                   />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">đ</span>
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">
+                    đ
+                  </span>
                 </div>
                 <button
                   type="button"
@@ -1921,7 +2262,9 @@ export const DashboardAdmin: React.FC = () => {
                   onClick={async () => {
                     const val = Number(depositInput);
                     if (!Number.isFinite(val) || val < 1_000) {
-                      toast.error('Tiền cọc phải là số nguyên dương tối thiểu 1.000 VND');
+                      toast.error(
+                        "Tiền cọc phải là số nguyên dương tối thiểu 1.000 VND",
+                      );
                       return;
                     }
                     setDepositSaving(true);
@@ -1931,19 +2274,26 @@ export const DashboardAdmin: React.FC = () => {
                       setDepositInput(String(res.depositAmount));
                       toast.success(res.message);
                     } catch (e) {
-                      toast.error(e instanceof Error ? e.message : 'Không lưu được');
+                      toast.error(
+                        e instanceof Error ? e.message : "Không lưu được",
+                      );
                     } finally {
                       setDepositSaving(false);
                     }
                   }}
                   className="px-5 py-2.5 bg-primary text-white rounded-xl font-semibold text-sm disabled:opacity-50 flex items-center gap-2 shrink-0 hover:bg-primary/90 transition-colors"
                 >
-                  {depositSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  {depositSaving ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Check className="w-4 h-4" />
+                  )}
                   Lưu
                 </button>
               </div>
               <p className="mt-2 text-xs text-slate-400">
-                Thay đổi có hiệu lực ngay cho lần đặt lịch tiếp theo. Các lịch hẹn đã tạo không bị ảnh hưởng.
+                Thay đổi có hiệu lực ngay cho lần đặt lịch tiếp theo. Các lịch
+                hẹn đã tạo không bị ảnh hưởng.
               </p>
             </div>
           </div>
@@ -1954,11 +2304,18 @@ export const DashboardAdmin: React.FC = () => {
       {deptFormOpen && (
         <ModalOverlay open onClose={closeDeptForm}>
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 relative pr-12">
-            <ModalCloseButton onClose={closeDeptForm} disabled={deptSubmitting} />
-            <h3 className="text-lg font-bold text-slate-900 mb-4 pr-2">{editingDeptId ? 'Sửa khoa' : 'Thêm khoa'}</h3>
+            <ModalCloseButton
+              onClose={closeDeptForm}
+              disabled={deptSubmitting}
+            />
+            <h3 className="text-lg font-bold text-slate-900 mb-4 pr-2">
+              {editingDeptId ? "Sửa khoa" : "Thêm khoa"}
+            </h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Tên khoa</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Tên khoa
+                </label>
                 <input
                   type="text"
                   value={deptName}
@@ -1967,15 +2324,21 @@ export const DashboardAdmin: React.FC = () => {
                     if (deptFieldError) setDeptFieldError(null);
                   }}
                   className={`w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary focus:border-primary ${
-                    deptFieldError ? 'border-red-300 bg-red-50/40' : 'border-slate-200'
+                    deptFieldError
+                      ? "border-red-300 bg-red-50/40"
+                      : "border-slate-200"
                   }`}
                   placeholder="VD: Khoa Nội tổng quát"
                   aria-invalid={!!deptFieldError}
                 />
-                {deptFieldError ? <p className="text-xs text-red-600 mt-1">{deptFieldError}</p> : null}
+                {deptFieldError ? (
+                  <p className="text-xs text-red-600 mt-1">{deptFieldError}</p>
+                ) : null}
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Mô tả</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Mô tả
+                </label>
                 <textarea
                   value={deptDesc}
                   onChange={(e) => setDeptDesc(e.target.value)}
@@ -1986,12 +2349,23 @@ export const DashboardAdmin: React.FC = () => {
               </div>
             </div>
             <div className="flex gap-2 mt-6">
-              <button type="button" onClick={closeDeptForm} className="flex-1 py-2 border border-slate-200 rounded-xl font-medium text-slate-700">
+              <button
+                type="button"
+                onClick={closeDeptForm}
+                className="flex-1 py-2 border border-slate-200 rounded-xl font-medium text-slate-700"
+              >
                 Hủy
               </button>
-              <button type="button" onClick={submitDept} disabled={deptSubmitting} className="flex-1 py-2 bg-primary text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2">
-                {deptSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                {editingDeptId ? 'Cập nhật' : 'Thêm'}
+              <button
+                type="button"
+                onClick={submitDept}
+                disabled={deptSubmitting}
+                className="flex-1 py-2 bg-primary text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {deptSubmitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : null}
+                {editingDeptId ? "Cập nhật" : "Thêm"}
               </button>
             </div>
           </div>
@@ -2002,10 +2376,17 @@ export const DashboardAdmin: React.FC = () => {
       {doctorFormOpen && (
         <ModalOverlay open onClose={() => setDoctorFormOpen(false)}>
           <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full p-6 sm:p-8 my-8 relative pr-12 sm:pr-14">
-            <ModalCloseButton onClose={() => setDoctorFormOpen(false)} disabled={doctorSubmitting} />
-            <h3 className="text-xl font-bold text-slate-900 mb-6 pr-2">Thêm bác sĩ</h3>
+            <ModalCloseButton
+              onClose={() => setDoctorFormOpen(false)}
+              disabled={doctorSubmitting}
+            />
+            <h3 className="text-xl font-bold text-slate-900 mb-6 pr-2">
+              Thêm bác sĩ
+            </h3>
             {doctorError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{doctorError}</div>
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+                {doctorError}
+              </div>
             )}
             <div className="flex flex-col md:flex-row gap-8 md:gap-10 md:items-start">
               <div className="flex justify-center md:justify-start shrink-0 md:pt-1">
@@ -2019,112 +2400,181 @@ export const DashboardAdmin: React.FC = () => {
               <div className="flex-1 min-w-0">
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Họ tên *</label>
-                <input
-                  type="text"
-                  value={doctorForm.fullName}
-                  onChange={(e) => setDoctorForm((f) => ({ ...f, fullName: e.target.value }))}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
-                  placeholder="Nguyễn Văn A"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Email *</label>
-                <input
-                  type="email"
-                  value={doctorForm.email}
-                  onChange={(e) => setDoctorForm((f) => ({ ...f, email: e.target.value }))}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
-                  placeholder="bs.a@hospital.vn"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Mật khẩu *</label>
-                <input
-                  type="password"
-                  value={doctorForm.password}
-                  onChange={(e) => setDoctorForm((f) => ({ ...f, password: e.target.value }))}
-                  className={`w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary ${
-                    doctorFieldErrors?.password ? 'border-red-300 bg-red-50/40' : 'border-slate-200'
-                  }`}
-                  placeholder="••••••••"
-                />
-                {doctorFieldErrors?.password ? (
-                  <p className="text-xs text-red-600 mt-1">{doctorFieldErrors.password}</p>
-                ) : null}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Số điện thoại</label>
-                <input
-                  type="text"
-                  value={doctorForm.phone ?? ''}
-                  onChange={(e) => setDoctorForm((f) => ({ ...f, phone: e.target.value || undefined }))}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
-                  placeholder="0901234567"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Khoa</label>
-                <select
-                  value={doctorForm.departmentId ?? ''}
-                  onChange={(e) => setDoctorForm((f) => ({ ...f, departmentId: e.target.value || null }))}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">— Chọn khoa —</option>
-                  {departments.map((d) => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Trường đại học (tùy chọn)</label>
-                <input
-                  type="text"
-                  value={doctorForm.university ?? ''}
-                  onChange={(e) => setDoctorForm((f) => ({ ...f, university: e.target.value || null }))}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
-                  placeholder="VD: Đại học Y Hà Nội"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Giới thiệu (bio)</label>
-                <textarea
-                  value={doctorForm.bio ?? ''}
-                  onChange={(e) => setDoctorForm((f) => ({ ...f, bio: e.target.value || null }))}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
-                  rows={2}
-                  placeholder="Mô tả ngắn về chuyên môn"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Số năm kinh nghiệm</label>
-                <input
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={doctorForm.experienceYears ?? ''}
-                  onChange={(e) => {
-                    if (e.target.value === '') {
-                      setDoctorForm((f) => ({ ...f, experienceYears: null }));
-                      return;
-                    }
-                    const n = parseInt(e.target.value, 10);
-                    if (Number.isNaN(n)) return;
-                    setDoctorForm((f) => ({ ...f, experienceYears: Math.max(0, n) }));
-                  }}
-                  className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
-                  placeholder="10"
-                />
-              </div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Họ tên *
+                    </label>
+                    <input
+                      type="text"
+                      value={doctorForm.fullName}
+                      onChange={(e) =>
+                        setDoctorForm((f) => ({
+                          ...f,
+                          fullName: e.target.value,
+                        }))
+                      }
+                      className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
+                      placeholder="Nguyễn Văn A"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Email *
+                    </label>
+                    <input
+                      type="email"
+                      value={doctorForm.email}
+                      onChange={(e) =>
+                        setDoctorForm((f) => ({ ...f, email: e.target.value }))
+                      }
+                      className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
+                      placeholder="bs.a@hospital.vn"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Mật khẩu *
+                    </label>
+                    <input
+                      type="password"
+                      value={doctorForm.password}
+                      onChange={(e) =>
+                        setDoctorForm((f) => ({
+                          ...f,
+                          password: e.target.value,
+                        }))
+                      }
+                      className={`w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary ${
+                        doctorFieldErrors?.password
+                          ? "border-red-300 bg-red-50/40"
+                          : "border-slate-200"
+                      }`}
+                      placeholder="••••••••"
+                    />
+                    {doctorFieldErrors?.password ? (
+                      <p className="text-xs text-red-600 mt-1">
+                        {doctorFieldErrors.password}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Số điện thoại
+                    </label>
+                    <input
+                      type="text"
+                      value={doctorForm.phone ?? ""}
+                      onChange={(e) =>
+                        setDoctorForm((f) => ({
+                          ...f,
+                          phone: e.target.value || undefined,
+                        }))
+                      }
+                      className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
+                      placeholder="0901234567"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Khoa
+                    </label>
+                    <select
+                      value={doctorForm.departmentId ?? ""}
+                      onChange={(e) =>
+                        setDoctorForm((f) => ({
+                          ...f,
+                          departmentId: e.target.value || null,
+                        }))
+                      }
+                      className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="">— Chọn khoa —</option>
+                      {departments.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Trường đại học (tùy chọn)
+                    </label>
+                    <input
+                      type="text"
+                      value={doctorForm.university ?? ""}
+                      onChange={(e) =>
+                        setDoctorForm((f) => ({
+                          ...f,
+                          university: e.target.value || null,
+                        }))
+                      }
+                      className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
+                      placeholder="VD: Đại học Y Hà Nội"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Giới thiệu (bio)
+                    </label>
+                    <textarea
+                      value={doctorForm.bio ?? ""}
+                      onChange={(e) =>
+                        setDoctorForm((f) => ({
+                          ...f,
+                          bio: e.target.value || null,
+                        }))
+                      }
+                      className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
+                      rows={2}
+                      placeholder="Mô tả ngắn về chuyên môn"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Số năm kinh nghiệm
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={doctorForm.experienceYears ?? ""}
+                      onChange={(e) => {
+                        if (e.target.value === "") {
+                          setDoctorForm((f) => ({
+                            ...f,
+                            experienceYears: null,
+                          }));
+                          return;
+                        }
+                        const n = parseInt(e.target.value, 10);
+                        if (Number.isNaN(n)) return;
+                        setDoctorForm((f) => ({
+                          ...f,
+                          experienceYears: Math.max(0, n),
+                        }));
+                      }}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
+                      placeholder="10"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
             <div className="flex gap-2 mt-8">
-              <button onClick={() => setDoctorFormOpen(false)} className="flex-1 py-2 border border-slate-200 rounded-xl font-medium text-slate-700">
+              <button
+                onClick={() => setDoctorFormOpen(false)}
+                className="flex-1 py-2 border border-slate-200 rounded-xl font-medium text-slate-700"
+              >
                 Hủy
               </button>
-              <button onClick={submitDoctor} disabled={doctorSubmitting} className="flex-1 py-2 bg-primary text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2">
-                {doctorSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              <button
+                onClick={submitDoctor}
+                disabled={doctorSubmitting}
+                className="flex-1 py-2 bg-primary text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {doctorSubmitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : null}
                 Thêm bác sĩ
               </button>
             </div>
@@ -2144,49 +2594,86 @@ export const DashboardAdmin: React.FC = () => {
                 <Loader2 className="w-10 h-10 text-primary animate-spin" />
               </div>
             ) : null}
-            <h3 className="text-xl font-bold text-slate-900 mb-6 pr-2">Cập nhật bác sĩ</h3>
+            <h3 className="text-xl font-bold text-slate-900 mb-6 pr-2">
+              Cập nhật bác sĩ
+            </h3>
             {editDoctorError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{editDoctorError}</div>
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+                {editDoctorError}
+              </div>
             )}
             <div className="flex flex-col md:flex-row gap-8 md:gap-10 md:items-start">
               <div className="flex justify-center md:justify-start shrink-0 md:pt-1">
-                <AvatarPicker file={editDoctorAvatar} onChange={setEditDoctorAvatar} label="Đổi ảnh (tùy chọn)" size="lg" />
+                <AvatarPicker
+                  file={editDoctorAvatar}
+                  onChange={setEditDoctorAvatar}
+                  label="Đổi ảnh (tùy chọn)"
+                  size="lg"
+                />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Họ tên *</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Họ tên *
+                    </label>
                     <input
                       type="text"
                       value={editDoctorForm.fullName}
-                      onChange={(e) => setEditDoctorForm((f) => ({ ...f, fullName: e.target.value }))}
+                      onChange={(e) =>
+                        setEditDoctorForm((f) => ({
+                          ...f,
+                          fullName: e.target.value,
+                        }))
+                      }
                       className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Email *</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Email *
+                    </label>
                     <input
                       type="email"
                       value={editDoctorForm.email}
-                      onChange={(e) => setEditDoctorForm((f) => ({ ...f, email: e.target.value }))}
+                      onChange={(e) =>
+                        setEditDoctorForm((f) => ({
+                          ...f,
+                          email: e.target.value,
+                        }))
+                      }
                       className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Số điện thoại</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Số điện thoại
+                    </label>
                     <input
                       type="text"
-                      value={editDoctorForm.phone ?? ''}
-                      onChange={(e) => setEditDoctorForm((f) => ({ ...f, phone: e.target.value || null }))}
+                      value={editDoctorForm.phone ?? ""}
+                      onChange={(e) =>
+                        setEditDoctorForm((f) => ({
+                          ...f,
+                          phone: e.target.value || null,
+                        }))
+                      }
                       className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
                       placeholder="0901234567"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Khoa</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Khoa
+                    </label>
                     <select
-                      value={editDoctorForm.departmentId ?? ''}
-                      onChange={(e) => setEditDoctorForm((f) => ({ ...f, departmentId: e.target.value || null }))}
+                      value={editDoctorForm.departmentId ?? ""}
+                      onChange={(e) =>
+                        setEditDoctorForm((f) => ({
+                          ...f,
+                          departmentId: e.target.value || null,
+                        }))
+                      }
                       className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
                     >
                       <option value="">— Chọn khoa —</option>
@@ -2198,38 +2685,60 @@ export const DashboardAdmin: React.FC = () => {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Trường đại học</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Trường đại học
+                    </label>
                     <input
                       type="text"
-                      value={editDoctorForm.university ?? ''}
-                      onChange={(e) => setEditDoctorForm((f) => ({ ...f, university: e.target.value || null }))}
+                      value={editDoctorForm.university ?? ""}
+                      onChange={(e) =>
+                        setEditDoctorForm((f) => ({
+                          ...f,
+                          university: e.target.value || null,
+                        }))
+                      }
                       className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Số năm kinh nghiệm</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Số năm kinh nghiệm
+                    </label>
                     <input
                       type="number"
                       min={0}
                       step={1}
-                      value={editDoctorForm.experienceYears ?? ''}
+                      value={editDoctorForm.experienceYears ?? ""}
                       onChange={(e) => {
-                        if (e.target.value === '') {
-                          setEditDoctorForm((f) => ({ ...f, experienceYears: null }));
+                        if (e.target.value === "") {
+                          setEditDoctorForm((f) => ({
+                            ...f,
+                            experienceYears: null,
+                          }));
                           return;
                         }
                         const n = parseInt(e.target.value, 10);
                         if (Number.isNaN(n)) return;
-                        setEditDoctorForm((f) => ({ ...f, experienceYears: Math.max(0, n) }));
+                        setEditDoctorForm((f) => ({
+                          ...f,
+                          experienceYears: Math.max(0, n),
+                        }));
                       }}
                       className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
                     />
                   </div>
                   <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Giới thiệu (bio)</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Giới thiệu (bio)
+                    </label>
                     <textarea
-                      value={editDoctorForm.bio ?? ''}
-                      onChange={(e) => setEditDoctorForm((f) => ({ ...f, bio: e.target.value || null }))}
+                      value={editDoctorForm.bio ?? ""}
+                      onChange={(e) =>
+                        setEditDoctorForm((f) => ({
+                          ...f,
+                          bio: e.target.value || null,
+                        }))
+                      }
                       className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary"
                       rows={2}
                     />
@@ -2251,7 +2760,9 @@ export const DashboardAdmin: React.FC = () => {
                 disabled={editDoctorSubmitting || editDoctorLoading}
                 className="flex-1 py-2 bg-primary text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {editDoctorSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {editDoctorSubmitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : null}
                 Lưu thay đổi
               </button>
             </div>
@@ -2260,13 +2771,37 @@ export const DashboardAdmin: React.FC = () => {
       )}
 
       {createUserOpen && (
-        <ModalOverlay open onClose={() => !createUserSubmitting && setCreateUserOpen(false)}>
+        <ModalOverlay
+          open
+          onClose={() => !createUserSubmitting && setCreateUserOpen(false)}
+        >
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 relative pr-12">
-            <ModalCloseButton onClose={() => setCreateUserOpen(false)} disabled={createUserSubmitting} />
-            <h3 className="text-lg font-bold text-slate-900 mb-1 pr-2">Thêm bệnh nhân</h3>
+            <ModalCloseButton
+              onClose={() => setCreateUserOpen(false)}
+              disabled={createUserSubmitting}
+            />
+            <h3 className="text-lg font-bold text-slate-900 mb-1 pr-2">
+              Thêm tài khoản
+            </h3>
             <p className="text-xs text-slate-500 mb-4">
-              Tạo tài khoản bệnh nhân mới. Để thêm bác sĩ (có sinh lịch khám), dùng nút « Thêm bác sĩ » bên cạnh.
+              Tạo tài khoản bệnh nhân mới. Để thêm bác sĩ (có sinh lịch khám),
+              dùng nút « Thêm bác sĩ » bên cạnh.
             </p>
+            <label className="block mb-3 text-sm">
+              Vai trò
+              <select
+                className="block w-full border rounded-lg p-2"
+                value={createUserRole}
+                onChange={(e) =>
+                  setCreateUserRole(e.target.value as typeof createUserRole)
+                }
+              >
+                <option value="user">Bệnh nhân</option>
+                <option value="receptionist">Lễ tân</option>
+                <option value="cashier">Thu ngân</option>
+                <option value="admin">Quản trị</option>
+              </select>
+            </label>
             {createUserError && (
               <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
                 {createUserError}
@@ -2278,7 +2813,9 @@ export const DashboardAdmin: React.FC = () => {
                 <input
                   type="email"
                   value={createUserForm.email}
-                  onChange={(e) => setCreateUserForm((f) => ({ ...f, email: e.target.value }))}
+                  onChange={(e) =>
+                    setCreateUserForm((f) => ({ ...f, email: e.target.value }))
+                  }
                   className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl"
                   autoComplete="off"
                 />
@@ -2288,7 +2825,12 @@ export const DashboardAdmin: React.FC = () => {
                 <input
                   type="password"
                   value={createUserForm.password}
-                  onChange={(e) => setCreateUserForm((f) => ({ ...f, password: e.target.value }))}
+                  onChange={(e) =>
+                    setCreateUserForm((f) => ({
+                      ...f,
+                      password: e.target.value,
+                    }))
+                  }
                   className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl"
                   autoComplete="new-password"
                 />
@@ -2298,7 +2840,12 @@ export const DashboardAdmin: React.FC = () => {
                 <input
                   type="text"
                   value={createUserForm.fullName}
-                  onChange={(e) => setCreateUserForm((f) => ({ ...f, fullName: e.target.value }))}
+                  onChange={(e) =>
+                    setCreateUserForm((f) => ({
+                      ...f,
+                      fullName: e.target.value,
+                    }))
+                  }
                   className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl"
                 />
               </label>
@@ -2307,7 +2854,9 @@ export const DashboardAdmin: React.FC = () => {
                 <input
                   type="tel"
                   value={createUserForm.phone}
-                  onChange={(e) => setCreateUserForm((f) => ({ ...f, phone: e.target.value }))}
+                  onChange={(e) =>
+                    setCreateUserForm((f) => ({ ...f, phone: e.target.value }))
+                  }
                   className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl"
                 />
               </label>
@@ -2327,7 +2876,9 @@ export const DashboardAdmin: React.FC = () => {
                 disabled={createUserSubmitting}
                 className="flex-1 py-2 bg-primary text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {createUserSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {createUserSubmitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : null}
                 Tạo tài khoản
               </button>
             </div>
@@ -2338,16 +2889,27 @@ export const DashboardAdmin: React.FC = () => {
       {pwdModalOpen && (
         <ModalOverlay open onClose={() => setPwdModalOpen(false)}>
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 relative pr-12">
-            <ModalCloseButton onClose={() => setPwdModalOpen(false)} disabled={pwdSubmitting} />
-            <h3 className="text-lg font-bold text-slate-900 mb-1 pr-2">Đổi mật khẩu</h3>
+            <ModalCloseButton
+              onClose={() => setPwdModalOpen(false)}
+              disabled={pwdSubmitting}
+            />
+            <h3 className="text-lg font-bold text-slate-900 mb-1 pr-2">
+              Đổi mật khẩu
+            </h3>
             <p className="text-sm text-slate-600 mb-4">{pwdDoctorName}</p>
-            {pwdError && <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{pwdError}</div>}
+            {pwdError && (
+              <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+                {pwdError}
+              </div>
+            )}
             <p className="text-xs text-slate-500 mb-4">
               Tối thiểu 8 ký tự, gồm chữ hoa, thường, số và ký tự đặc biệt.
             </p>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Mật khẩu mới</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Mật khẩu mới
+                </label>
                 <input
                   type="password"
                   value={pwdNew}
@@ -2355,14 +2917,18 @@ export const DashboardAdmin: React.FC = () => {
                     setPwdNew(e.target.value);
                     setPwdFieldErrors(null);
                   }}
-                  className={`w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary ${pwdFieldErrors?.password ? 'border-red-300' : 'border-slate-200'}`}
+                  className={`w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary ${pwdFieldErrors?.password ? "border-red-300" : "border-slate-200"}`}
                 />
                 {pwdFieldErrors?.password ? (
-                  <p className="text-xs text-red-600 mt-1">{pwdFieldErrors.password}</p>
+                  <p className="text-xs text-red-600 mt-1">
+                    {pwdFieldErrors.password}
+                  </p>
                 ) : null}
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Nhập lại mật khẩu</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Nhập lại mật khẩu
+                </label>
                 <input
                   type="password"
                   value={pwdConfirm}
@@ -2370,10 +2936,12 @@ export const DashboardAdmin: React.FC = () => {
                     setPwdConfirm(e.target.value);
                     setPwdFieldErrors(null);
                   }}
-                  className={`w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary ${pwdFieldErrors?.confirmPassword ? 'border-red-300' : 'border-slate-200'}`}
+                  className={`w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary ${pwdFieldErrors?.confirmPassword ? "border-red-300" : "border-slate-200"}`}
                 />
                 {pwdFieldErrors?.confirmPassword ? (
-                  <p className="text-xs text-red-600 mt-1">{pwdFieldErrors.confirmPassword}</p>
+                  <p className="text-xs text-red-600 mt-1">
+                    {pwdFieldErrors.confirmPassword}
+                  </p>
                 ) : null}
               </div>
             </div>
@@ -2391,7 +2959,9 @@ export const DashboardAdmin: React.FC = () => {
                 disabled={pwdSubmitting}
                 className="flex-1 py-2 bg-primary text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {pwdSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {pwdSubmitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : null}
                 Cập nhật mật khẩu
               </button>
             </div>
@@ -2402,9 +2972,14 @@ export const DashboardAdmin: React.FC = () => {
       {lockConfirmOpen && lockTarget && (
         <ModalOverlay open onClose={closeLockConfirm}>
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 relative pr-12">
-            <ModalCloseButton onClose={closeLockConfirm} disabled={lockSubmitting} />
+            <ModalCloseButton
+              onClose={closeLockConfirm}
+              disabled={lockSubmitting}
+            />
             <h3 className="text-lg font-bold text-slate-900 mb-2 pr-2">
-              {lockTarget.locked ? 'Khóa tài khoản bác sĩ' : 'Mở khóa tài khoản bác sĩ'}
+              {lockTarget.locked
+                ? "Khóa tài khoản bác sĩ"
+                : "Mở khóa tài khoản bác sĩ"}
             </h3>
             <p className="text-sm text-slate-600 mb-4">
               {lockTarget.locked
@@ -2425,11 +3000,15 @@ export const DashboardAdmin: React.FC = () => {
                 onClick={() => void submitDoctorLock()}
                 disabled={lockSubmitting}
                 className={`flex-1 py-2 rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2 ${
-                  lockTarget.locked ? 'bg-amber-600 text-white hover:bg-amber-700' : 'bg-primary text-white hover:bg-primary/90'
+                  lockTarget.locked
+                    ? "bg-amber-600 text-white hover:bg-amber-700"
+                    : "bg-primary text-white hover:bg-primary/90"
                 }`}
               >
-                {lockSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                {lockTarget.locked ? 'Xác nhận khóa' : 'Xác nhận mở khóa'}
+                {lockSubmitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : null}
+                {lockTarget.locked ? "Xác nhận khóa" : "Xác nhận mở khóa"}
               </button>
             </div>
           </div>
@@ -2437,4 +3016,4 @@ export const DashboardAdmin: React.FC = () => {
       )}
     </div>
   );
-}
+};

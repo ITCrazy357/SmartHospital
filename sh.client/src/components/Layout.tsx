@@ -53,6 +53,21 @@ export const Header: React.FC<HeaderProps> = ({
       ? "dashboard-admin"
       : "home";
 
+  if (user?.role === "receptionist" || user?.role === "cashier")
+    return (
+      <header className="sticky top-0 z-50 bg-white border-b p-4 flex flex-wrap justify-between gap-3">
+        <button
+          className="font-bold"
+          onClick={() => onNavigate("dashboard-clinic")}
+        >
+          SmartHospital ·{" "}
+          {user.role === "receptionist" ? "Tiếp đón" : "Thu ngân"}
+        </button>
+        <span>{userDisplayName}</span>
+        <button onClick={onLogout}>Đăng xuất</button>
+      </header>
+    );
+
   return (
     <>
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
@@ -455,149 +470,69 @@ export const Header: React.FC<HeaderProps> = ({
 };
 
 export const Footer: React.FC = () => {
+  const clinic = import.meta.env.VITE_CLINIC_NAME || "SmartHospital";
+  const address = import.meta.env.VITE_CLINIC_ADDRESS;
+  const phone = import.meta.env.VITE_CLINIC_PHONE;
+  const email = import.meta.env.VITE_CLINIC_EMAIL;
+  const publicLink = (value: string | undefined) => {
+    try {
+      const url = new URL(value || "");
+      return ["https:", "http:"].includes(url.protocol) ? url.href : null;
+    } catch {
+      return null;
+    }
+  };
+  const privacy = publicLink(import.meta.env.VITE_PRIVACY_URL),
+    terms = publicLink(import.meta.env.VITE_TERMS_URL);
   return (
-    <footer className="bg-slate-900 text-slate-300 pt-16 pb-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-16">
-          <div className="space-y-6">
-            <div className="flex items-center gap-2">
-              <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
-                <div className="w-6 h-6 border-4 border-white rounded-full border-t-transparent"></div>
-              </div>
-              <span className="text-xl font-bold text-white tracking-tight">
-                SmartHospital
-              </span>
-            </div>
-            <p className="text-slate-400 leading-relaxed">
-              Đặt lịch khám nhanh, giảm chờ đợi. Chọn bác sĩ, chọn giờ, đặt cọc
-              giữ chỗ — thanh toán phần còn lại sau khám.
+    <footer className="bg-slate-900 text-slate-300 py-8">
+      <div className="max-w-7xl mx-auto px-4 space-y-5">
+        <div className="flex flex-wrap justify-between gap-5">
+          <div>
+            <strong className="text-white text-lg">{clinic}</strong>
+            <p className="mt-2 text-sm">Đặt lịch và theo dõi quá trình khám.</p>
+          </div>
+          <nav
+            className="flex flex-wrap gap-4 text-sm"
+            aria-label="Liên kết cuối trang"
+          >
+            <a href="?view=search">Tìm bác sĩ</a>
+            <a href="?view=departments">Chuyên khoa</a>
+            {privacy && (
+              <a href={privacy} rel="noopener noreferrer">
+                Chính sách bảo mật
+              </a>
+            )}
+            {terms && (
+              <a href={terms} rel="noopener noreferrer">
+                Điều khoản
+              </a>
+            )}
+          </nav>
+        </div>
+        <div className="space-y-2 text-sm">
+          {address && <p>{address}</p>}
+          {phone && (
+            <p>
+              Điện thoại:{" "}
+              <a href={`tel:${phone.replace(/[^+\d]/g, "")}`}>{phone}</a>
             </p>
-            <div className="flex gap-4">
-              <a
-                href="#"
-                className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center hover:bg-primary hover:text-white transition-all"
-              >
-                <Facebook className="w-5 h-5" />
-              </a>
-              <a
-                href="#"
-                className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center hover:bg-primary hover:text-white transition-all"
-              >
-                <Twitter className="w-5 h-5" />
-              </a>
-              <a
-                href="#"
-                className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center hover:bg-primary hover:text-white transition-all"
-              >
-                <Instagram className="w-5 h-5" />
-              </a>
-              <a
-                href="#"
-                className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center hover:bg-primary hover:text-white transition-all"
-              >
-                <Linkedin className="w-5 h-5" />
-              </a>
-            </div>
-          </div>
-
-          <div>
-            <h4 className="text-white font-semibold mb-6">Liên kết</h4>
-            <ul className="space-y-4">
-              <li>
-                <a
-                  href="http://localhost:5431/?view=search"
-                  className="hover:text-primary transition-colors"
-                >
-                  Tìm bác sĩ
-                </a>
-              </li>
-              <li>
-                <a
-                  href="http://localhost:5431/?view=departments"
-                  className="hover:text-primary transition-colors"
-                >
-                  Các khoa
-                </a>
-              </li>
-              <li>
-                <a href="#" className="hover:text-primary transition-colors">
-                  Tư vấn online
-                </a>
-              </li>
-              <li>
-                <a href="#" className="hover:text-primary transition-colors">
-                  Gói khám
-                </a>
-              </li>
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="text-white font-semibold mb-6">Hỗ trợ</h4>
-            <ul className="space-y-4">
-              <li>
-                <a href="#" className="hover:text-primary transition-colors">
-                  Trung tâm trợ giúp
-                </a>
-              </li>
-              <li>
-                <a href="#" className="hover:text-primary transition-colors">
-                  Chính sách bảo mật
-                </a>
-              </li>
-              <li>
-                <a href="#" className="hover:text-primary transition-colors">
-                  Điều khoản
-                </a>
-              </li>
-              <li>
-                <a href="#" className="hover:text-primary transition-colors">
-                  Liên hệ
-                </a>
-              </li>
-              <li>
-                <a href="#" className="hover:text-primary transition-colors">
-                  Câu hỏi thường gặp
-                </a>
-              </li>
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="text-white font-semibold mb-6">
-              Thông tin bệnh viện / Liên hệ
-            </h4>
-            <ul className="space-y-4">
-              <li className="flex items-start gap-3">
-                <MapPin className="w-5 h-5 text-primary shrink-0" />
-                <span>123 Medical Plaza, Health City, HC 56789</span>
-              </li>
-              <li className="flex items-center gap-3">
-                <Phone className="w-5 h-5 text-primary shrink-0" />
-                <span>+1 (555) 000-1234</span>
-              </li>
-              <li className="flex items-center gap-3">
-                <Mail className="w-5 h-5 text-primary shrink-0" />
-                <span>support@smarthospital.com</span>
-              </li>
-            </ul>
-          </div>
+          )}
+          {email && (
+            <p>
+              Email: <a href={`mailto:${email}`}>{email}</a>
+            </p>
+          )}
+          {!phone && !email && (
+            <p>
+              Liên hệ lễ tân tại phòng khám để được hỗ trợ lịch hẹn và thanh
+              toán.
+            </p>
+          )}
         </div>
-
-        <div className="pt-8 border-t border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-slate-500">
-          <p>© 2026 SmartHospital. Bảo lưu mọi quyền.</p>
-          <div className="flex gap-6">
-            <a href="#" className="hover:text-white transition-colors">
-              Bảo mật
-            </a>
-            <a href="#" className="hover:text-white transition-colors">
-              Điều khoản
-            </a>
-            <a href="#" className="hover:text-white transition-colors">
-              Cookie
-            </a>
-          </div>
-        </div>
+        <p className="text-xs text-slate-400 border-t border-slate-700 pt-4">
+          © {new Date().getFullYear()} {clinic}
+        </p>
       </div>
     </footer>
   );

@@ -1,15 +1,17 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
 /** URL đầy đủ cho ảnh tĩnh API (vd: `/upload/xxx.jpg` → gốc API). */
-export function resolveApiAssetUrl(url: string | null | undefined): string | undefined {
-  if (url == null || url === '') return undefined;
-  if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  const path = url.startsWith('/') ? url : `/${url}`;
+export function resolveApiAssetUrl(
+  url: string | null | undefined,
+): string | undefined {
+  if (url == null || url === "") return undefined;
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  const path = url.startsWith("/") ? url : `/${url}`;
   return `${API_BASE}${path}`;
 }
 
-const AUTH_TOKEN_KEY = 'sh_auth_token';
-const AUTH_USER_KEY = 'sh_auth_user';
+const AUTH_TOKEN_KEY = "sh_auth_token";
+const AUTH_USER_KEY = "sh_auth_user";
 
 export function getStoredToken(): string | null {
   return localStorage.getItem(AUTH_TOKEN_KEY);
@@ -26,7 +28,7 @@ export function clearStoredAuth(): void {
 }
 
 /** Event name khi token bị từ chối (401) — App.tsx subscribe để reset state user. */
-export const AUTH_CLEARED_EVENT = 'sh:auth-cleared';
+export const AUTH_CLEARED_EVENT = "sh:auth-cleared";
 
 export function getStoredUser(): ApiAuthUser | null {
   const raw = localStorage.getItem(AUTH_USER_KEY);
@@ -41,21 +43,28 @@ export function getStoredUser(): ApiAuthUser | null {
 export class ApiRequestError extends Error {
   readonly fieldErrors?: Record<string, string>;
   readonly statusCode?: number;
-  constructor(message: string, opts?: { fieldErrors?: Record<string, string>; statusCode?: number }) {
+  constructor(
+    message: string,
+    opts?: { fieldErrors?: Record<string, string>; statusCode?: number },
+  ) {
     super(message);
-    this.name = 'ApiRequestError';
+    this.name = "ApiRequestError";
     this.fieldErrors = opts?.fieldErrors;
     this.statusCode = opts?.statusCode;
   }
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+export async function request<T>(
+  path: string,
+  options?: RequestInit,
+): Promise<T> {
   const token = getStoredToken();
   const headers: HeadersInit = {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
     ...options?.headers,
   };
-  if (token) (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+  if (token)
+    (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (!res.ok) {
@@ -76,16 +85,27 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
         message?: string | string[] | { errors?: Record<string, string> };
         errors?: Record<string, string>;
       };
-      if (j.errors && typeof j.errors === 'object' && !Array.isArray(j.errors)) {
+      if (
+        j.errors &&
+        typeof j.errors === "object" &&
+        !Array.isArray(j.errors)
+      ) {
         fieldErrors = j.errors as Record<string, string>;
-        msg = 'Dữ liệu không hợp lệ';
+        msg = "Dữ liệu không hợp lệ";
       } else {
         const m = j.message;
-        if (m && typeof m === 'object' && !Array.isArray(m) && 'errors' in m && m.errors && typeof m.errors === 'object') {
+        if (
+          m &&
+          typeof m === "object" &&
+          !Array.isArray(m) &&
+          "errors" in m &&
+          m.errors &&
+          typeof m.errors === "object"
+        ) {
           fieldErrors = m.errors as Record<string, string>;
-          msg = 'Dữ liệu không hợp lệ';
-        } else if (typeof m === 'string') msg = m;
-        else if (Array.isArray(m)) msg = m.join('; ');
+          msg = "Dữ liệu không hợp lệ";
+        } else if (typeof m === "string") msg = m;
+        else if (Array.isArray(m)) msg = m.join("; ");
       }
     } catch {
       /* giữ msg */
@@ -96,34 +116,33 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  getDepartments: () =>
-    request<ApiDepartment[]>('/departments'),
+  getDepartments: () => request<ApiDepartment[]>("/departments"),
 
-  getDepartment: (id: string) =>
-    request<ApiDepartment>(`/departments/${id}`),
+  getDepartment: (id: string) => request<ApiDepartment>(`/departments/${id}`),
 
   getDoctors: (departmentId?: string) => {
-    const q = departmentId ? `?departmentId=${encodeURIComponent(departmentId)}` : '';
+    const q = departmentId
+      ? `?departmentId=${encodeURIComponent(departmentId)}`
+      : "";
     return request<ApiDoctor[]>(`/doctors${q}`);
   },
 
-  getDoctor: (id: string) =>
-    request<ApiDoctor>(`/doctors/${id}`),
+  getDoctor: (id: string) => request<ApiDoctor>(`/doctors/${id}`),
 
   getDoctorSlots: (doctorId: string, fromDate?: string) => {
-    const q = fromDate ? `?from=${encodeURIComponent(fromDate)}` : '';
+    const q = fromDate ? `?from=${encodeURIComponent(fromDate)}` : "";
     return request<ApiAppointmentSlot[]>(`/doctors/${doctorId}/slots${q}`);
   },
 
   getDoctorSchedules: (doctorId: string, workDay?: string) => {
-    const q = workDay ? `?workDay=${encodeURIComponent(workDay)}` : '';
+    const q = workDay ? `?workDay=${encodeURIComponent(workDay)}` : "";
     return request<ApiDoctorSchedule[]>(`/doctors/${doctorId}/schedules${q}`);
   },
 
   // Auth (map theo model UserPublic)
   login: (email: string, password: string) =>
-    request<ApiAuthResult>('/auth/login', {
-      method: 'POST',
+    request<ApiAuthResult>("/auth/login", {
+      method: "POST",
       body: JSON.stringify({ email, password }),
     }),
 
@@ -134,48 +153,60 @@ export const api = {
     fullName: string;
     phone: string;
   }) =>
-    request<ApiRegisterSuccess>('/auth/register', {
-      method: 'POST',
+    request<ApiRegisterSuccess>("/auth/register", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
   forgotPassword: (email: string) =>
-    request<{ message: string }>('/auth/forgot-password', {
-      method: 'POST',
+    request<{ message: string }>("/auth/forgot-password", {
+      method: "POST",
       body: JSON.stringify({ email }),
     }),
 
-  resetPassword: (body: { token: string; password: string; confirmPassword: string }) =>
-    request<{ message: string }>('/auth/reset-password', {
-      method: 'POST',
+  resetPassword: (body: {
+    token: string;
+    password: string;
+    confirmPassword: string;
+  }) =>
+    request<{ message: string }>("/auth/reset-password", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
   logout: () =>
-    request<{ message: string }>('/auth/logout', { method: 'POST' }),
+    request<{ message: string }>("/auth/logout", { method: "POST" }),
 
-  getMe: () =>
-    request<{ user: ApiAuthUser }>('/auth/me'),
+  getMe: () => request<{ user: ApiAuthUser }>("/auth/me"),
 
   updateMyProfile: (body: { fullName: string; phone: string }) =>
-    request<{ user: ApiAuthUser }>('/auth/me', {
-      method: 'PATCH',
+    request<{ user: ApiAuthUser }>("/auth/me", {
+      method: "PATCH",
       body: JSON.stringify(body),
     }),
 
-  changeMyPassword: (body: { currentPassword: string; password: string; confirmPassword: string }) =>
-    request<{ message: string }>('/auth/me/password', {
-      method: 'PATCH',
+  changeMyPassword: (body: {
+    currentPassword: string;
+    password: string;
+    confirmPassword: string;
+  }) =>
+    request<{ message: string }>("/auth/me/password", {
+      method: "PATCH",
       body: JSON.stringify(body),
     }),
 
   updateMyAvatar: async (avatarFile: File) => {
     const fd = new FormData();
-    fd.append('avatar', avatarFile);
+    fd.append("avatar", avatarFile);
     const token = getStoredToken();
     const headers: HeadersInit = {};
-    if (token) (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
-    const res = await fetch(`${API_BASE}/auth/me/avatar`, { method: 'PATCH', headers, body: fd });
+    if (token)
+      (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE}/auth/me/avatar`, {
+      method: "PATCH",
+      headers,
+      body: fd,
+    });
     if (!res.ok) {
       const text = await res.text();
       throw new Error(text || `HTTP ${res.status}`);
@@ -184,8 +215,8 @@ export const api = {
   },
 
   // Admin
-  getAdminUsers: (role?: 'user' | 'doctor' | 'admin') => {
-    const q = role ? `?role=${role}` : '';
+  getAdminUsers: (role?: UserRole) => {
+    const q = role ? `?role=${role}` : "";
     return request<ApiAuthUser[]>(`/admin/users${q}`);
   },
 
@@ -195,10 +226,10 @@ export const api = {
     password: string;
     fullName: string;
     phone?: string | null;
-    role: 'user' | 'admin';
+    role: "user" | "admin" | "receptionist" | "cashier";
   }) =>
-    request<ApiAuthUser>('/admin/users', {
-      method: 'POST',
+    request<ApiAuthUser>("/admin/users", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
@@ -208,7 +239,7 @@ export const api = {
       fullName?: string;
       email?: string;
       phone?: string | null;
-      role?: 'user' | 'admin';
+      role?: "user" | "admin" | "receptionist" | "cashier";
       departmentId?: string | null;
       bio?: string | null;
       experienceYears?: number | null;
@@ -216,49 +247,62 @@ export const api = {
     },
   ) =>
     request<ApiAuthUser>(`/admin/users/${userId}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(body),
     }),
 
   adminDeleteUser: (userId: string) =>
-    request<{ message: string }>(`/admin/users/${userId}`, { method: 'DELETE' }),
+    request<{ message: string }>(`/admin/users/${userId}`, {
+      method: "DELETE",
+    }),
 
   adminSetUserPassword: (
     userId: string,
     body: { password: string; confirmPassword: string },
   ) =>
     request<{ message: string }>(`/admin/users/${userId}/password`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(body),
     }),
 
-  getAdminDoctor: (id: string) => request<{ user: ApiAuthUser }>(`/admin/doctors/${id}`),
+  getAdminDoctor: (id: string) =>
+    request<{ user: ApiAuthUser }>(`/admin/doctors/${id}`),
 
-  getAdminPayments: (params?: { from?: string; to?: string; status?: 'pending' | 'paid' | 'failed' }) => {
+  getAdminPayments: (params?: {
+    from?: string;
+    to?: string;
+    status?: "pending" | "paid" | "failed";
+  }) => {
     const sp = new URLSearchParams();
-    if (params?.from) sp.set('from', params.from);
-    if (params?.to) sp.set('to', params.to);
-    if (params?.status) sp.set('status', params.status);
+    if (params?.from) sp.set("from", params.from);
+    if (params?.to) sp.set("to", params.to);
+    if (params?.status) sp.set("status", params.status);
     const q = sp.toString();
-    return request<ApiAdminPaymentRow[]>(`/admin/payments${q ? `?${q}` : ''}`);
+    return request<ApiAdminPaymentRow[]>(`/admin/payments${q ? `?${q}` : ""}`);
   },
 
   getAdminStatsOverview: (from?: string, to?: string) => {
     const sp = new URLSearchParams();
-    if (from) sp.set('from', from);
-    if (to) sp.set('to', to);
+    if (from) sp.set("from", from);
+    if (to) sp.set("to", to);
     const q = sp.toString();
-    return request<ApiAdminStatsOverview>(`/admin/stats/overview${q ? `?${q}` : ''}`);
+    return request<ApiAdminStatsOverview>(
+      `/admin/stats/overview${q ? `?${q}` : ""}`,
+    );
   },
 
   // ============ Quảng cáo (PB38) ============
-  getAdminAds: (params?: { status?: AdStatus | ''; placement?: AdPlacement | ''; q?: string }) => {
+  getAdminAds: (params?: {
+    status?: AdStatus | "";
+    placement?: AdPlacement | "";
+    q?: string;
+  }) => {
     const sp = new URLSearchParams();
-    if (params?.status) sp.set('status', params.status);
-    if (params?.placement) sp.set('placement', params.placement);
-    if (params?.q) sp.set('q', params.q);
+    if (params?.status) sp.set("status", params.status);
+    if (params?.placement) sp.set("placement", params.placement);
+    if (params?.q) sp.set("q", params.q);
     const q = sp.toString();
-    return request<ApiAdminAd[]>(`/admin/ads${q ? `?${q}` : ''}`);
+    return request<ApiAdminAd[]>(`/admin/ads${q ? `?${q}` : ""}`);
   },
 
   getAdminAd: (id: string) => request<ApiAdminAd>(`/admin/ads/${id}`),
@@ -269,25 +313,32 @@ export const api = {
     options?: { id?: string; removeImage?: boolean },
   ) => {
     const fd = new FormData();
-    if (body.type !== undefined) fd.append('type', body.type);
-    if (body.title !== undefined) fd.append('title', body.title);
-    if (body.body !== undefined) fd.append('body', body.body ?? '');
-    if (body.linkUrl !== undefined) fd.append('linkUrl', body.linkUrl ?? '');
+    if (body.type !== undefined) fd.append("type", body.type);
+    if (body.title !== undefined) fd.append("title", body.title);
+    if (body.body !== undefined) fd.append("body", body.body ?? "");
+    if (body.linkUrl !== undefined) fd.append("linkUrl", body.linkUrl ?? "");
     if (body.placements !== undefined) {
-      fd.append('placements', JSON.stringify(body.placements));
+      fd.append("placements", JSON.stringify(body.placements));
     }
-    if (body.status !== undefined) fd.append('status', body.status);
-    if (body.priority !== undefined) fd.append('priority', String(body.priority));
-    if (body.startAt !== undefined) fd.append('startAt', body.startAt ?? '');
-    if (body.endAt !== undefined) fd.append('endAt', body.endAt ?? '');
-    if (imageFile) fd.append('image', imageFile);
-    if (options?.removeImage) fd.append('removeImage', '1');
+    if (body.status !== undefined) fd.append("status", body.status);
+    if (body.priority !== undefined)
+      fd.append("priority", String(body.priority));
+    if (body.startAt !== undefined) fd.append("startAt", body.startAt ?? "");
+    if (body.endAt !== undefined) fd.append("endAt", body.endAt ?? "");
+    if (imageFile) fd.append("image", imageFile);
+    if (options?.removeImage) fd.append("removeImage", "1");
 
     const token = getStoredToken();
-    if (!token) throw new Error('Chưa đăng nhập admin.');
-    const url = options?.id ? `${API_BASE}/admin/ads/${options.id}` : `${API_BASE}/admin/ads`;
-    const method = options?.id ? 'PATCH' : 'POST';
-    const res = await fetch(url, { method, headers: { Authorization: `Bearer ${token}` }, body: fd });
+    if (!token) throw new Error("Chưa đăng nhập admin.");
+    const url = options?.id
+      ? `${API_BASE}/admin/ads/${options.id}`
+      : `${API_BASE}/admin/ads`;
+    const method = options?.id ? "PATCH" : "POST";
+    const res = await fetch(url, {
+      method,
+      headers: { Authorization: `Bearer ${token}` },
+      body: fd,
+    });
     if (!res.ok) {
       const text = await res.text();
       throw new Error(text || `HTTP ${res.status}`);
@@ -297,69 +348,82 @@ export const api = {
 
   patchAdminAdStatus: (id: string, status: AdStatus) =>
     request<ApiAdminAd>(`/admin/ads/${id}/status`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify({ status }),
     }),
 
   deleteAdminAd: (id: string) =>
-    request<{ message: string }>(`/admin/ads/${id}`, { method: 'DELETE' }),
+    request<{ message: string }>(`/admin/ads/${id}`, { method: "DELETE" }),
 
   /** Public — chính sách đặt lịch (tiền cọc + phí khám). Không cần đăng nhập. */
   getBookingPolicy: () =>
-    request<{ depositAmount: number; consultationFee: number }>('/config/booking-policy'),
+    request<{ depositAmount: number; consultationFee: number }>(
+      "/config/booking-policy",
+    ),
 
   /** Lấy cấu hình hệ thống (deposit_amount). */
-  getAdminConfig: () =>
-    request<{ depositAmount: number }>('/admin/config'),
+  getAdminConfig: () => request<{ depositAmount: number }>("/admin/config"),
 
   /** Cập nhật tiền cọc đặt lịch. */
   setDepositAmount: (amount: number) =>
-    request<{ depositAmount: number; message: string }>('/admin/config/deposit-amount', {
-      method: 'PATCH',
-      body: JSON.stringify({ amount }),
-    }),
+    request<{ depositAmount: number; message: string }>(
+      "/admin/config/deposit-amount",
+      {
+        method: "PATCH",
+        body: JSON.stringify({ amount }),
+      },
+    ),
 
   /** Public — lấy quảng cáo đang hiệu lực theo vị trí */
   getAds: (placement: AdPlacement) =>
     request<ApiPublicAd[]>(`/ads?placement=${encodeURIComponent(placement)}`, {
-      cache: 'no-store',
+      cache: "no-store",
     }),
 
   trackAdClick: (id: string) =>
-    request<{ ok: true }>(`/ads/${id}/click`, { method: 'POST' }),
+    request<{ ok: true }>(`/ads/${id}/click`, { method: "POST" }),
 
   trackAdView: (id: string) =>
-    request<{ ok: true }>(`/ads/${id}/view`, { method: 'POST' }),
+    request<{ ok: true }>(`/ads/${id}/view`, { method: "POST" }),
 
-  updateDoctor: async (doctorId: string, body: ApiUpdateDoctorBody, avatarFile?: File | null) => {
+  updateDoctor: async (
+    doctorId: string,
+    body: ApiUpdateDoctorBody,
+    avatarFile?: File | null,
+  ) => {
     const fd = new FormData();
-    fd.append('fullName', body.fullName);
-    fd.append('email', body.email);
-    fd.append('phone', body.phone ?? '');
-    if (body.departmentId) fd.append('departmentId', body.departmentId);
-    else fd.append('departmentId', '');
-    if (body.bio != null && body.bio !== '') fd.append('bio', body.bio);
-    else fd.append('bio', '');
+    fd.append("fullName", body.fullName);
+    fd.append("email", body.email);
+    fd.append("phone", body.phone ?? "");
+    if (body.departmentId) fd.append("departmentId", body.departmentId);
+    else fd.append("departmentId", "");
+    if (body.bio != null && body.bio !== "") fd.append("bio", body.bio);
+    else fd.append("bio", "");
     if (body.experienceYears != null && !Number.isNaN(body.experienceYears)) {
-      fd.append('experienceYears', String(body.experienceYears));
-    } else fd.append('experienceYears', '');
-    if (body.university != null && body.university.trim() !== '') fd.append('university', body.university.trim());
-    else fd.append('university', '');
-    if (avatarFile) fd.append('avatar', avatarFile);
+      fd.append("experienceYears", String(body.experienceYears));
+    } else fd.append("experienceYears", "");
+    if (body.university != null && body.university.trim() !== "")
+      fd.append("university", body.university.trim());
+    else fd.append("university", "");
+    if (avatarFile) fd.append("avatar", avatarFile);
 
     const token = getStoredToken();
     if (!token) {
       throw new Error(
-        'Chưa có phiên đăng nhập. Vui lòng đăng nhập bằng tài khoản quản trị (admin) rồi thử lại.',
+        "Chưa có phiên đăng nhập. Vui lòng đăng nhập bằng tài khoản quản trị (admin) rồi thử lại.",
       );
     }
     const headers: HeadersInit = { Authorization: `Bearer ${token}` };
-    const res = await fetch(`${API_BASE}/admin/doctors/${doctorId}`, { method: 'PATCH', headers, body: fd });
+    const res = await fetch(`${API_BASE}/admin/doctors/${doctorId}`, {
+      method: "PATCH",
+      headers,
+      body: fd,
+    });
     if (!res.ok) {
       const text = await res.text();
       if (res.status === 401) {
         throw new Error(
-          'Phiên đăng nhập hết hạn hoặc token không hợp lệ. Hãy đăng nhập lại bằng tài khoản admin.',
+          "Phiên đăng nhập hết hạn hoặc token không hợp lệ. Hãy đăng nhập lại bằng tài khoản admin.",
         );
       }
       throw new Error(text || `HTTP ${res.status}`);
@@ -367,48 +431,56 @@ export const api = {
     return res.json() as Promise<{ user: ApiAuthUser }>;
   },
 
-  setDoctorPassword: (doctorId: string, body: { password: string; confirmPassword: string }) =>
+  setDoctorPassword: (
+    doctorId: string,
+    body: { password: string; confirmPassword: string },
+  ) =>
     request<{ message: string }>(`/admin/doctors/${doctorId}/password`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(body),
     }),
 
   setDoctorLocked: (doctorId: string, locked: boolean) =>
     request<{ message: string }>(`/admin/doctors/${doctorId}/lock`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify({ locked }),
     }),
 
   createDoctor: async (body: ApiCreateDoctorBody, avatarFile?: File | null) => {
     const fd = new FormData();
-    fd.append('email', body.email);
-    fd.append('password', body.password);
-    fd.append('fullName', body.fullName);
-    if (body.phone) fd.append('phone', body.phone);
-    if (body.departmentId) fd.append('departmentId', body.departmentId);
-    if (body.bio != null && body.bio !== '') fd.append('bio', body.bio);
+    fd.append("email", body.email);
+    fd.append("password", body.password);
+    fd.append("fullName", body.fullName);
+    if (body.phone) fd.append("phone", body.phone);
+    if (body.departmentId) fd.append("departmentId", body.departmentId);
+    if (body.bio != null && body.bio !== "") fd.append("bio", body.bio);
     if (body.experienceYears != null && !Number.isNaN(body.experienceYears)) {
-      fd.append('experienceYears', String(body.experienceYears));
+      fd.append("experienceYears", String(body.experienceYears));
     }
-    if (body.university != null && body.university.trim() !== '') fd.append('university', body.university.trim());
-    if (avatarFile) fd.append('avatar', avatarFile);
+    if (body.university != null && body.university.trim() !== "")
+      fd.append("university", body.university.trim());
+    if (avatarFile) fd.append("avatar", avatarFile);
 
     const token = getStoredToken();
     if (!token) {
       throw new Error(
-        'Chưa có phiên đăng nhập. Vui lòng đăng nhập bằng tài khoản quản trị (admin) rồi thử lại.',
+        "Chưa có phiên đăng nhập. Vui lòng đăng nhập bằng tài khoản quản trị (admin) rồi thử lại.",
       );
     }
     const headers: HeadersInit = {
       Authorization: `Bearer ${token}`,
     };
 
-    const res = await fetch(`${API_BASE}/admin/doctors`, { method: 'POST', headers, body: fd });
+    const res = await fetch(`${API_BASE}/admin/doctors`, {
+      method: "POST",
+      headers,
+      body: fd,
+    });
     if (!res.ok) {
       const text = await res.text();
       if (res.status === 401) {
         throw new Error(
-          'Phiên đăng nhập hết hạn hoặc token không hợp lệ. Hãy đăng xuất, đăng nhập lại bằng tài khoản admin (hoặc kiểm tra VITE_API_URL trùng với server bạn đã đăng nhập).',
+          "Phiên đăng nhập hết hạn hoặc token không hợp lệ. Hãy đăng xuất, đăng nhập lại bằng tài khoản admin (hoặc kiểm tra VITE_API_URL trùng với server bạn đã đăng nhập).",
         );
       }
       throw new Error(text || `HTTP ${res.status}`);
@@ -417,55 +489,71 @@ export const api = {
   },
 
   createDepartment: (body: { name: string; description?: string | null }) =>
-    request<ApiDepartment>('/departments', {
-      method: 'POST',
+    request<ApiDepartment>("/departments", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
-  updateDepartment: (id: string, body: { name?: string; description?: string | null }) =>
+  updateDepartment: (
+    id: string,
+    body: { name?: string; description?: string | null },
+  ) =>
     request<ApiDepartment>(`/departments/${id}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(body),
     }),
   deleteDepartment: (id: string) =>
-    request<{ message: string }>(`/departments/${id}`, { method: 'DELETE' }),
+    request<{ message: string }>(`/departments/${id}`, { method: "DELETE" }),
 
   // Doctor (my slots - read-only, do hệ thống generate khi admin thêm bác sĩ)
   getMySlots: (fromDate?: string) => {
-    const q = fromDate ? `?from=${encodeURIComponent(fromDate)}` : '';
+    const q = fromDate ? `?from=${encodeURIComponent(fromDate)}` : "";
     return request<ApiAppointmentSlot[]>(`/doctor/me/slots${q}`);
   },
 
-  getMyLeaveRequests: () => request<ApiDoctorLeaveRequest[]>('/doctor/me/leave-requests'),
+  getMyLeaveRequests: () =>
+    request<ApiDoctorLeaveRequest[]>("/doctor/me/leave-requests"),
 
-  getMyDoctorPatients: () => request<ApiDoctorPatient[]>('/doctor/me/patients'),
+  getMyDoctorPatients: () => request<ApiDoctorPatient[]>("/doctor/me/patients"),
 
   getMyDoctorAppointments: (fromDate?: string, toDate?: string) => {
     const params = new URLSearchParams();
-    if (fromDate) params.set('from', fromDate);
-    if (toDate) params.set('to', toDate);
+    if (fromDate) params.set("from", fromDate);
+    if (toDate) params.set("to", toDate);
     const q = params.toString();
-    return request<ApiDoctorAppointment[]>(`/doctor/me/appointments${q ? `?${q}` : ''}`);
+    return request<ApiDoctorAppointment[]>(
+      `/doctor/me/appointments${q ? `?${q}` : ""}`,
+    );
   },
 
-  createLeaveRequest: (body: { startDate: string; endDate: string; reason?: string | null }) =>
-    request<ApiDoctorLeaveRequest>('/doctor/me/leave-requests', {
-      method: 'POST',
+  createLeaveRequest: (body: {
+    startDate: string;
+    endDate: string;
+    reason?: string | null;
+  }) =>
+    request<ApiDoctorLeaveRequest>("/doctor/me/leave-requests", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
-  getAdminLeaveRequests: (status?: 'pending' | 'approved' | 'rejected') => {
-    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+  getAdminLeaveRequests: (status?: "pending" | "approved" | "rejected") => {
+    const q = status ? `?status=${encodeURIComponent(status)}` : "";
     return request<ApiDoctorLeaveRequest[]>(`/admin/leave-requests${q}`);
   },
 
   approveLeaveRequest: (id: string) =>
-    request<ApiDoctorLeaveRequest>(`/admin/leave-requests/${id}/approve`, { method: 'POST' }),
+    request<ApiDoctorLeaveRequest>(`/admin/leave-requests/${id}/approve`, {
+      method: "POST",
+    }),
 
   rejectLeaveRequest: (id: string) =>
-    request<ApiDoctorLeaveRequest>(`/admin/leave-requests/${id}/reject`, { method: 'POST' }),
+    request<ApiDoctorLeaveRequest>(`/admin/leave-requests/${id}/reject`, {
+      method: "POST",
+    }),
 
   getDoctorPendingMedicalAppointments: () =>
-    request<ApiDoctorPendingMedicalAppointment[]>('/medical-records/me/pending-appointments'),
+    request<ApiDoctorPendingMedicalAppointment[]>(
+      "/medical-records/me/pending-appointments",
+    ),
 
   createDoctorMedicalRecord: (body: {
     appointmentId: string;
@@ -474,33 +562,41 @@ export const api = {
     treatment?: string | null;
     notes?: string | null;
   }) =>
-    request<ApiCreateMedicalRecordResult>('/medical-records/me', {
-      method: 'POST',
+    request<ApiCreateMedicalRecordResult>("/medical-records/me", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
-  getMyMedicalRecords: () => request<ApiDoctorMedicalRecordListItem[]>('/medical-records/me/records'),
+  getMyMedicalRecords: () =>
+    request<ApiDoctorMedicalRecordListItem[]>("/medical-records/me/records"),
 
   updateDoctorMedicalRecord: (
     recordId: string,
     body: {
+      version: number;
+      reason: string;
       symptoms?: string | null;
       diagnosis?: string | null;
       treatment?: string | null;
       notes?: string | null;
     },
   ) =>
-    request<ApiCreateMedicalRecordResult>(`/medical-records/me/records/${recordId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(body),
-    }),
+    request<ApiCreateMedicalRecordResult>(
+      `/medical-records/me/records/${recordId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      },
+    ),
 
   getMyDoctorStats: (fromDate?: string, toDate?: string) => {
     const params = new URLSearchParams();
-    if (fromDate) params.set('from', fromDate);
-    if (toDate) params.set('to', toDate);
+    if (fromDate) params.set("from", fromDate);
+    if (toDate) params.set("to", toDate);
     const q = params.toString();
-    return request<ApiDoctorStats>(`/medical-records/me/stats${q ? `?${q}` : ''}`);
+    return request<ApiDoctorStats>(
+      `/medical-records/me/stats${q ? `?${q}` : ""}`,
+    );
   },
 
   // Appointments (đặt lịch + PayOS). returnUrl/cancelUrl: sau thanh toán PayOS redirect về client.
@@ -510,20 +606,40 @@ export const api = {
     returnUrl?: string;
     cancelUrl?: string;
   }) =>
-    request<ApiCreateAppointmentResult>('/appointments', {
-      method: 'POST',
+    request<ApiCreateAppointmentResult>("/appointments", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
-  getMyAppointments: () =>
-    request<ApiAppointment[]>('/appointments/me'),
+  getMyAppointments: (page = 1) =>
+    request<ApiAppointment[]>(`/appointments/me?page=${page}`),
 
-  getMyPayments: () =>
-    request<ApiPaymentHistoryItem[]>('/appointments/me/payments'),
+  getAppointmentStatus: (id: string) =>
+    request<import("../components/BookingResult").BookingStatus>(
+      `/appointments/${id}/status`,
+    ),
+  resumeAppointmentCheckout: (id: string) =>
+    request<ApiCreateAppointmentResult>(`/appointments/${id}/checkout`, {
+      method: "POST",
+      body: "{}",
+    }),
+  rescheduleAppointment: (id: string, slotId: string, reason: string) =>
+    request(`/appointments/${id}/reschedule`, {
+      method: "POST",
+      body: JSON.stringify({ slotId, reason }),
+    }),
+  setUserLocked: (id: string, locked: boolean) =>
+    request<{ message: string }>(`/admin/users/${id}/lock`, {
+      method: "PATCH",
+      body: JSON.stringify({ locked }),
+    }),
+
+  getMyPayments: (page = 1) =>
+    request<ApiPaymentHistoryItem[]>(`/appointments/me/payments?page=${page}`),
 
   /** Bệnh nhân: toàn bộ hồ sơ khám đã có (mới nhất trước). */
   getMyPatientMedicalRecords: () =>
-    request<ApiPatientMedicalRecord[]>('/medical-records/me/patient'),
+    request<ApiPatientMedicalRecord[]>("/medical-records/me/patient"),
 
   /** Bệnh nhân: kết quả khám của 1 cuộc hẹn cụ thể. */
   getPatientMedicalRecordByAppointment: (appointmentId: string) =>
@@ -539,7 +655,7 @@ export const api = {
     request<{ id: string; status: string; depositRefunded: boolean }>(
       `/appointments/${appointmentId}/cancel`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ reason: reason ?? null }),
       },
     ),
@@ -549,7 +665,7 @@ export const api = {
     request<{ id: string; status: string; depositRefunded: boolean }>(
       `/admin/appointments/${appointmentId}/cancel`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ reason: reason ?? null }),
       },
     ),
@@ -565,17 +681,17 @@ export const api = {
       h24Failed: number;
       h1Failed: number;
       skipped: number;
-    }>('/admin/appointments/reminders/run', { method: 'POST' }),
+    }>("/admin/appointments/reminders/run", { method: "POST" }),
 
   /**
    * Admin gửi MAIL TEST cho 1 cuộc hẹn cụ thể (subject [TEST]). Bỏ qua cửa sổ
    * thời gian và log idempotency — bấm nhiều lần đều gửi.
    */
-  sendAppointmentReminderTest: (appointmentId: string, kind: 'h24' | 'h1') =>
-    request<{ to: string; kind: 'h24' | 'h1' }>(
+  sendAppointmentReminderTest: (appointmentId: string, kind: "h24" | "h1") =>
+    request<{ to: string; kind: "h24" | "h1" }>(
       `/admin/appointments/${appointmentId}/send-reminder-test`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ kind }),
       },
     ),
@@ -585,8 +701,8 @@ export const api = {
    * Public — không cần đăng nhập.
    */
   aiSuggestDepartments: (symptoms: string) =>
-    request<ApiSpecialtySuggestion>('/ai/suggest-departments', {
-      method: 'POST',
+    request<ApiSpecialtySuggestion>("/ai/suggest-departments", {
+      method: "POST",
       body: JSON.stringify({ symptoms }),
     }),
 
@@ -595,9 +711,13 @@ export const api = {
    * mức độ khẩn của triệu chứng (AI phân loại), và slot trống của bác sĩ.
    * Cần đăng nhập (role=user).
    */
-  aiSuggestSlots: (args: { doctorId: string; symptoms?: string | null; daysAhead?: number }) =>
-    request<ApiSlotSuggestion>('/ai/suggest-slots', {
-      method: 'POST',
+  aiSuggestSlots: (args: {
+    doctorId: string;
+    symptoms?: string | null;
+    daysAhead?: number;
+  }) =>
+    request<ApiSlotSuggestion>("/ai/suggest-slots", {
+      method: "POST",
       body: JSON.stringify({
         doctorId: args.doctorId,
         symptoms: args.symptoms ?? null,
@@ -608,9 +728,9 @@ export const api = {
   /** Admin xem báo cáo chi phí dùng AI (OpenAI) trong khoảng ngày. */
   getAdminAiUsageStats: (from?: string, to?: string) => {
     const qs = new URLSearchParams();
-    if (from) qs.set('from', from);
-    if (to) qs.set('to', to);
-    const tail = qs.toString() ? `?${qs.toString()}` : '';
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+    const tail = qs.toString() ? `?${qs.toString()}` : "";
     return request<ApiAdminAiUsageStats>(`/admin/ai-usage/stats${tail}`);
   },
 
@@ -625,8 +745,8 @@ export const api = {
     question: string,
     opts?: { patientId?: string | null; sessionId?: string | null },
   ) =>
-    request<ApiDoctorChatResult>('/ai/doctor/chat', {
-      method: 'POST',
+    request<ApiDoctorChatResult>("/ai/doctor/chat", {
+      method: "POST",
       body: JSON.stringify({
         question,
         patientId: opts?.patientId ?? null,
@@ -636,7 +756,7 @@ export const api = {
 
   /** Liệt kê các phiên chat AI của bác sĩ — sort updatedAt DESC, dùng cho sidebar. */
   listDoctorAiSessions: () =>
-    request<ApiDoctorChatSessionListItem[]>('/ai/doctor/sessions'),
+    request<ApiDoctorChatSessionListItem[]>("/ai/doctor/sessions"),
 
   /** Chi tiết 1 phiên + toàn bộ messages — dùng để load lại lịch sử khi click session. */
   getDoctorAiSession: (id: string) =>
@@ -644,35 +764,44 @@ export const api = {
 
   /** Tạo 1 phiên rỗng — title sẽ tự update khi gửi message đầu. */
   createDoctorAiSession: () =>
-    request<{ id: string; title: string; createdAt: string; updatedAt: string }>(
-      '/ai/doctor/sessions',
-      { method: 'POST', body: JSON.stringify({}) },
-    ),
+    request<{
+      id: string;
+      title: string;
+      createdAt: string;
+      updatedAt: string;
+    }>("/ai/doctor/sessions", { method: "POST", body: JSON.stringify({}) }),
 
   /** Đổi tên phiên. */
   renameDoctorAiSession: (id: string, title: string) =>
     request<{ id: string; title: string; updatedAt: string }>(
       `/ai/doctor/sessions/${id}`,
-      { method: 'PATCH', body: JSON.stringify({ title }) },
+      { method: "PATCH", body: JSON.stringify({ title }) },
     ),
 
   /** Xoá phiên (kèm toàn bộ messages — DB CASCADE). */
   deleteDoctorAiSession: (id: string) =>
-    request<{ ok: true }>(`/ai/doctor/sessions/${id}`, { method: 'DELETE' }),
+    request<{ ok: true }>(`/ai/doctor/sessions/${id}`, { method: "DELETE" }),
 
   /** Lấy chi tiết 1 hồ sơ bệnh án của bác sĩ — dùng khi click "Xem hồ sơ" từ kết quả AI. */
   getMyDoctorMedicalRecord: (recordId: string) =>
-    request<ApiDoctorMedicalRecordListItem>(`/medical-records/me/records/${recordId}`),
+    request<ApiDoctorMedicalRecordListItem>(
+      `/medical-records/me/records/${recordId}`,
+    ),
 
   /** Backfill embedding cho mọi hồ sơ chưa có vector (chạy 1 lần khi data cũ). */
-  backfillMyMedicalRecordEmbeddings: (opts?: { forceAll?: boolean; limit?: number }) =>
-    request<{ processed: number; succeeded: number; failed: number; skipped: number }>(
-      '/medical-records/me/backfill-embeddings',
-      {
-        method: 'POST',
-        body: JSON.stringify(opts ?? {}),
-      },
-    ),
+  backfillMyMedicalRecordEmbeddings: (opts?: {
+    forceAll?: boolean;
+    limit?: number;
+  }) =>
+    request<{
+      processed: number;
+      succeeded: number;
+      failed: number;
+      skipped: number;
+    }>("/medical-records/me/backfill-embeddings", {
+      method: "POST",
+      body: JSON.stringify(opts ?? {}),
+    }),
 };
 
 /** Format trả về của AI gợi ý chuyên khoa. */
@@ -680,7 +809,7 @@ export interface ApiSpecialtySuggestionItem {
   departmentId: string | null;
   departmentName: string;
   reason: string;
-  confidence: 'low' | 'medium' | 'high';
+  confidence: "low" | "medium" | "high";
 }
 
 export interface ApiSpecialtySuggestion {
@@ -746,7 +875,7 @@ export interface ApiDoctorChatSessionListItem {
 /** 1 message khi load chi tiết session. */
 export interface ApiDoctorChatSessionMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   sources: ApiDoctorChatSource[] | null;
   createdAt: string;
@@ -771,12 +900,27 @@ export interface ApiAdminAiUsageStats {
     totalTokens: number;
     costUsd: number;
   };
-  byFeature: { feature: string; requests: number; totalTokens: number; costUsd: number }[];
-  byModel: { model: string; requests: number; totalTokens: number; costUsd: number }[];
-  byDay: { date: string; requests: number; totalTokens: number; costUsd: number }[];
+  byFeature: {
+    feature: string;
+    requests: number;
+    totalTokens: number;
+    costUsd: number;
+  }[];
+  byModel: {
+    model: string;
+    requests: number;
+    totalTokens: number;
+    costUsd: number;
+  }[];
+  byDay: {
+    date: string;
+    requests: number;
+    totalTokens: number;
+    costUsd: number;
+  }[];
 }
 
-export type UserRole = 'user' | 'doctor' | 'admin';
+export type UserRole = "user" | "doctor" | "admin" | "receptionist" | "cashier";
 
 export interface ApiAuthUser {
   id: string;
@@ -859,7 +1003,7 @@ export interface ApiAppointmentSlot {
   id: string;
   doctorId: string;
   slotTime: string; // ISO timestamp
-  status: 'available' | 'booked' | 'on_leave';
+  status: "available" | "booked" | "on_leave";
 }
 
 /** GET /doctor/me/patients — bệnh nhân đã đặt lịch với bác sĩ */
@@ -909,6 +1053,7 @@ export interface ApiDoctorPendingMedicalAppointment {
 }
 
 export interface ApiDoctorMedicalRecordListItem {
+  version: number;
   id: string;
   patientId: string;
   patientName: string;
@@ -936,17 +1081,27 @@ export interface ApiAdminStatsOverview {
 }
 
 /** Quảng cáo (PB38) */
-export type AdType = 'banner' | 'promo';
-export type AdStatus = 'draft' | 'active' | 'paused' | 'archived' | 'expired';
-export type AdPlacement = 'home_hero' | 'home_below_search' | 'doctor_detail' | 'dashboard_user';
+export type AdType = "banner" | "promo";
+export type AdStatus = "draft" | "active" | "paused" | "archived" | "expired";
+export type AdPlacement =
+  | "home_hero"
+  | "home_below_search"
+  | "doctor_detail"
+  | "dashboard_user";
 
-export const AD_TYPES: AdType[] = ['banner', 'promo'];
-export const AD_STATUSES: AdStatus[] = ['draft', 'active', 'paused', 'archived', 'expired'];
+export const AD_TYPES: AdType[] = ["banner", "promo"];
+export const AD_STATUSES: AdStatus[] = [
+  "draft",
+  "active",
+  "paused",
+  "archived",
+  "expired",
+];
 export const AD_PLACEMENTS: AdPlacement[] = [
-  'home_hero',
-  'home_below_search',
-  'doctor_detail',
-  'dashboard_user',
+  "home_hero",
+  "home_below_search",
+  "doctor_detail",
+  "dashboard_user",
 ];
 
 export interface ApiAdminAd {
@@ -998,7 +1153,7 @@ export interface ApiAdminPaymentRow {
   amount: number;
   paymentType: string | null;
   paymentMethod: string | null;
-  status: 'pending' | 'paid' | 'failed';
+  status: "pending" | "paid" | "failed";
   createdAt: string;
   payosOrderCode: number | null;
   appointmentId: string;
@@ -1048,7 +1203,7 @@ export interface ApiDoctorLeaveRequest {
   /** Ngày T2–T6 trong khoảng (không gồm T7/CN); thiếu thì client tự tính */
   workdaysInRange?: string[];
   reason: string | null;
-  status: 'pending' | 'approved' | 'rejected';
+  status: "pending" | "approved" | "rejected";
   createdAt: string;
   reviewedAt: string | null;
   reviewedBy: string | null;
@@ -1088,7 +1243,11 @@ export interface ApiAppointment {
   status: string;
   depositAmount: number | null;
   createdAt: string;
-  doctor?: { fullName: string; avatarUrl: string | null; departmentName: string | null } | null;
+  doctor?: {
+    fullName: string;
+    avatarUrl: string | null;
+    departmentName: string | null;
+  } | null;
   slot?: { slotTime: string } | null;
   /** Đã có hồ sơ khám tương ứng → bệnh nhân có thể xem kết quả khám. */
   hasMedicalRecord?: boolean;

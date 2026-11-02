@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Calendar,
   CalendarClock,
@@ -27,20 +27,30 @@ import {
   AlertTriangle,
   Eye,
   EyeOff,
-} from 'lucide-react';
-import { api, resolveApiAssetUrl, ApiRequestError } from '../api/client';
+} from "lucide-react";
+import {
+  api,
+  resolveApiAssetUrl,
+  ApiRequestError,
+  clearStoredAuth,
+  AUTH_CLEARED_EVENT,
+} from "../api/client";
 import type {
   ApiAppointment,
   ApiAuthUser,
   ApiPatientMedicalRecord,
   ApiPaymentHistoryItem,
-} from '../api/client';
-import { AvatarPicker } from './AvatarPicker';
-import { ModalOverlay, ModalCloseButton } from './ModalOverlay';
-import { useToast } from '../contexts/ToastContext';
-import { formatDoctorName } from '../utils/formatDoctorName';
-import { validateStrongPassword, validateUpdateProfileForm } from '../utils/patient-register.validation';
-import { AdSlotSection } from './AdSlotSection';
+} from "../api/client";
+import { AvatarPicker } from "./AvatarPicker";
+import { ModalOverlay, ModalCloseButton } from "./ModalOverlay";
+import { useToast } from "../contexts/ToastContext";
+import { formatDoctorName } from "../utils/formatDoctorName";
+import {
+  validateStrongPassword,
+  validateUpdateProfileForm,
+} from "../utils/patient-register.validation";
+import { AdSlotSection } from "./AdSlotSection";
+import { PatientAppointmentTools } from "./PatientAppointmentTools";
 
 function formatAppointmentDateTime(iso: string): string {
   const d = new Date(iso);
@@ -49,49 +59,61 @@ function formatAppointmentDateTime(iso: string): string {
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
   const slotDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const timeStr = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  const timeStr = d.toLocaleTimeString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   if (slotDate.getTime() === today.getTime()) return `Hôm nay, ${timeStr}`;
   if (slotDate.getTime() === tomorrow.getTime()) return `Ngày mai, ${timeStr}`;
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
   const year = d.getFullYear();
   return `${day}/${month}/${year}, ${timeStr}`;
 }
 
 function formatHistoryDate(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleDateString('vi-VN', {
-    weekday: 'short',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
+  return d.toLocaleDateString("vi-VN", {
+    weekday: "short",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
   });
 }
 
 function formatFullDateTimeVi(iso: string): string {
   const d = new Date(iso);
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
   const year = d.getFullYear();
-  const time = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  const time = d.toLocaleTimeString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   return `${day}/${month}/${year} · ${time}`;
 }
 
 function formatVnd(amount: number): string {
-  return new Intl.NumberFormat('vi-VN').format(Math.round(amount)) + ' ₫';
+  return new Intl.NumberFormat("vi-VN").format(Math.round(amount)) + " ₫";
 }
 
-function appointmentStatusPresentation(status: string): { label: string; className: string } {
+function appointmentStatusPresentation(status: string): {
+  label: string;
+  className: string;
+} {
   const s = status.toLowerCase();
-  if (s === 'completed')
-    return { label: 'Hoàn tất', className: 'bg-emerald-50 text-emerald-800' };
-  if (s === 'confirmed')
-    return { label: 'Đã xác nhận', className: 'bg-sky-50 text-sky-800' };
-  if (s === 'pending')
-    return { label: 'Chờ thanh toán cọc', className: 'bg-amber-50 text-amber-900' };
-  if (s === 'cancelled')
-    return { label: 'Đã hủy', className: 'bg-red-50 text-red-800' };
-  return { label: status, className: 'bg-slate-100 text-slate-700' };
+  if (s === "completed")
+    return { label: "Hoàn tất", className: "bg-emerald-50 text-emerald-800" };
+  if (s === "confirmed")
+    return { label: "Đã xác nhận", className: "bg-sky-50 text-sky-800" };
+  if (s === "pending")
+    return {
+      label: "Chờ thanh toán cọc",
+      className: "bg-amber-50 text-amber-900",
+    };
+  if (s === "cancelled")
+    return { label: "Đã hủy", className: "bg-red-50 text-red-800" };
+  return { label: status, className: "bg-slate-100 text-slate-700" };
 }
 
 function paymentStatusPresentation(status: string): {
@@ -100,40 +122,40 @@ function paymentStatusPresentation(status: string): {
   dotClass: string;
 } {
   const s = status.toLowerCase();
-  if (s === 'paid')
+  if (s === "paid")
     return {
-      label: 'Thành công',
-      badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-      dotClass: 'bg-emerald-500',
+      label: "Thành công",
+      badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      dotClass: "bg-emerald-500",
     };
-  if (s === 'pending')
+  if (s === "pending")
     return {
-      label: 'Đang chờ',
-      badgeClass: 'bg-amber-50 text-amber-800 border-amber-200',
-      dotClass: 'bg-amber-500',
+      label: "Đang chờ",
+      badgeClass: "bg-amber-50 text-amber-800 border-amber-200",
+      dotClass: "bg-amber-500",
     };
-  if (s === 'failed')
+  if (s === "failed")
     return {
-      label: 'Thất bại',
-      badgeClass: 'bg-red-50 text-red-700 border-red-200',
-      dotClass: 'bg-red-500',
+      label: "Thất bại",
+      badgeClass: "bg-red-50 text-red-700 border-red-200",
+      dotClass: "bg-red-500",
     };
   return {
     label: status,
-    badgeClass: 'bg-slate-100 text-slate-700 border-slate-200',
-    dotClass: 'bg-slate-400',
+    badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
+    dotClass: "bg-slate-400",
   };
 }
 
 function paymentTypeLabel(type: string | null): string {
-  const t = (type ?? '').toLowerCase();
-  if (t === 'deposit') return 'Đặt cọc khám';
-  if (t === 'full') return 'Thanh toán đủ';
-  return 'Giao dịch';
+  const t = (type ?? "").toLowerCase();
+  if (t === "deposit") return "Đặt cọc khám";
+  if (t === "full") return "Thanh toán đủ";
+  return "Giao dịch";
 }
 
-type DashboardTab = 'upcoming' | 'history' | 'payments';
-type PaymentFilter = 'all' | 'paid' | 'pending' | 'failed';
+type DashboardTab = "upcoming" | "history" | "payments";
+type PaymentFilter = "all" | "paid" | "pending" | "failed";
 
 interface DashboardProps {
   user: ApiAuthUser | null;
@@ -142,11 +164,16 @@ interface DashboardProps {
   onNavigate?: (view: string) => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, onNavigate }) => {
+export const Dashboard: React.FC<DashboardProps> = ({
+  user,
+  onProfileUpdated,
+  onNavigate,
+}) => {
   const toast = useToast();
   const [appointments, setAppointments] = useState<ApiAppointment[]>([]);
   const [loadingAppointments, setLoadingAppointments] = useState(true);
   const [payments, setPayments] = useState<ApiPaymentHistoryItem[]>([]);
+  const [paymentsPage, setPaymentsPage] = useState(1);
   const [loadingPayments, setLoadingPayments] = useState(true);
 
   const [avatarBusy, setAvatarBusy] = useState(false);
@@ -154,36 +181,48 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
 
   const [editingProfile, setEditingProfile] = useState(false);
-  const [editForm, setEditForm] = useState<{ fullName: string; phone: string }>({
-    fullName: '',
-    phone: '',
-  });
-  const [editFieldErrors, setEditFieldErrors] = useState<Record<string, string>>({});
+  const [editForm, setEditForm] = useState<{ fullName: string; phone: string }>(
+    {
+      fullName: "",
+      phone: "",
+    },
+  );
+  const [editFieldErrors, setEditFieldErrors] = useState<
+    Record<string, string>
+  >({});
   const [editError, setEditError] = useState<string | null>(null);
   const [editBusy, setEditBusy] = useState(false);
-  const [pwdForm, setPwdForm] = useState<{ currentPassword: string; password: string; confirmPassword: string }>({
-    currentPassword: '',
-    password: '',
-    confirmPassword: '',
+  const [pwdForm, setPwdForm] = useState<{
+    currentPassword: string;
+    password: string;
+    confirmPassword: string;
+  }>({
+    currentPassword: "",
+    password: "",
+    confirmPassword: "",
   });
   const [showCurrentPwd, setShowCurrentPwd] = useState(false);
   const [showNewPwd, setShowNewPwd] = useState(false);
   const [showConfirmPwd, setShowConfirmPwd] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<DashboardTab>('upcoming');
-  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('all');
+  const [activeTab, setActiveTab] = useState<DashboardTab>("upcoming");
+  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("all");
 
   const [recordModalOpen, setRecordModalOpen] = useState(false);
-  const [recordData, setRecordData] = useState<ApiPatientMedicalRecord | null>(null);
+  const [recordData, setRecordData] = useState<ApiPatientMedicalRecord | null>(
+    null,
+  );
   const [recordLoading, setRecordLoading] = useState(false);
   const [recordError, setRecordError] = useState<string | null>(null);
 
   const [cancelTarget, setCancelTarget] = useState<ApiAppointment | null>(null);
-  const [cancelReason, setCancelReason] = useState('');
+  const [cancelReason, setCancelReason] = useState("");
   const [cancelBusy, setCancelBusy] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
-  const showPatientProfile = Boolean(user && (user.role === 'user' || user.role == null));
+  const showPatientProfile = Boolean(
+    user && (user.role === "user" || user.role == null),
+  );
 
   useEffect(() => {
     api
@@ -194,12 +233,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
   }, []);
 
   useEffect(() => {
+    setLoadingPayments(true);
     api
-      .getMyPayments()
+      .getMyPayments(paymentsPage)
       .then(setPayments)
       .catch(() => setPayments([]))
       .finally(() => setLoadingPayments(false));
-  }, []);
+  }, [paymentsPage]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -227,9 +267,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
       const { user: u } = await api.updateMyAvatar(file);
       onProfileUpdated(u);
       setPendingAvatarFile(null);
-      toast.success('Đã cập nhật ảnh đại diện.');
+      toast.success("Đã cập nhật ảnh đại diện.");
     } catch (e) {
-      setAvatarError(e instanceof Error ? e.message : 'Không tải được ảnh');
+      setAvatarError(e instanceof Error ? e.message : "Không tải được ảnh");
     } finally {
       setAvatarBusy(false);
     }
@@ -238,10 +278,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
   const startEditProfile = () => {
     if (!user) return;
     setEditForm({
-      fullName: user.fullName ?? '',
-      phone: user.phone ?? '',
+      fullName: user.fullName ?? "",
+      phone: user.phone ?? "",
     });
-    setPwdForm({ currentPassword: '', password: '', confirmPassword: '' });
+    setPwdForm({ currentPassword: "", password: "", confirmPassword: "" });
     setShowCurrentPwd(false);
     setShowNewPwd(false);
     setShowConfirmPwd(false);
@@ -271,18 +311,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
       return;
     }
     const wantChangePwd = Boolean(
-      pwdForm.currentPassword.trim() || pwdForm.password.trim() || pwdForm.confirmPassword.trim(),
+      pwdForm.currentPassword.trim() ||
+      pwdForm.password.trim() ||
+      pwdForm.confirmPassword.trim(),
     );
 
     if (wantChangePwd) {
       const fe: Record<string, string> = {};
-      if (!pwdForm.currentPassword.trim()) fe.currentPassword = 'Vui lòng nhập mật khẩu hiện tại';
-      if (!pwdForm.password.trim()) fe.password = 'Vui lòng nhập mật khẩu mới';
-      if (!pwdForm.confirmPassword.trim()) fe.confirmPassword = 'Vui lòng nhập lại mật khẩu mới';
-      if (pwdForm.password && pwdForm.confirmPassword && pwdForm.password !== pwdForm.confirmPassword) {
-        fe.confirmPassword = 'Mật khẩu nhập lại không khớp';
+      if (!pwdForm.currentPassword.trim())
+        fe.currentPassword = "Vui lòng nhập mật khẩu hiện tại";
+      if (!pwdForm.password.trim()) fe.password = "Vui lòng nhập mật khẩu mới";
+      if (!pwdForm.confirmPassword.trim())
+        fe.confirmPassword = "Vui lòng nhập lại mật khẩu mới";
+      if (
+        pwdForm.password &&
+        pwdForm.confirmPassword &&
+        pwdForm.password !== pwdForm.confirmPassword
+      ) {
+        fe.confirmPassword = "Mật khẩu nhập lại không khớp";
       }
-      const pwdErr = pwdForm.password ? validateStrongPassword(pwdForm.password) : null;
+      const pwdErr = pwdForm.password
+        ? validateStrongPassword(pwdForm.password)
+        : null;
       if (pwdErr) fe.password = pwdErr;
       if (Object.keys(fe).length > 0) {
         setEditFieldErrors((prev) => ({ ...prev, ...fe }));
@@ -294,25 +344,35 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
     setEditError(null);
     setEditFieldErrors({});
     try {
-      if (wantChangePwd) {
-        await api.changeMyPassword({
-          currentPassword: pwdForm.currentPassword,
-          password: pwdForm.password,
-          confirmPassword: pwdForm.confirmPassword,
-        });
-      }
       const { user: u } = await api.updateMyProfile({
         fullName: editForm.fullName.trim(),
         phone: editForm.phone.trim(),
       });
       onProfileUpdated(u);
+      if (wantChangePwd) {
+        await api.changeMyPassword(pwdForm);
+        clearStoredAuth();
+        window.dispatchEvent(
+          new CustomEvent(AUTH_CLEARED_EVENT, {
+            detail: { reason: "password_changed" },
+          }),
+        );
+        toast.success("Đã lưu hồ sơ và đổi mật khẩu. Vui lòng đăng nhập lại.");
+        return;
+      }
       setEditingProfile(false);
-      toast.success(wantChangePwd ? 'Đã cập nhật hồ sơ và đổi mật khẩu.' : 'Đã cập nhật hồ sơ.');
+      toast.success(
+        wantChangePwd
+          ? "Đã cập nhật hồ sơ và đổi mật khẩu."
+          : "Đã cập nhật hồ sơ.",
+      );
     } catch (e) {
       if (e instanceof ApiRequestError && e.fieldErrors) {
         setEditFieldErrors(e.fieldErrors);
       } else {
-        setEditError(e instanceof Error ? e.message : 'Không cập nhật được hồ sơ');
+        setEditError(
+          e instanceof Error ? e.message : "Không cập nhật được hồ sơ",
+        );
       }
     } finally {
       setEditBusy(false);
@@ -328,35 +388,50 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
       const t = new Date(a.slot!.slotTime).getTime();
       const status = a.status.toLowerCase();
       // Cancelled / completed luôn thuộc lịch sử (kể cả khi slot_time còn trong tương lai).
-      if (status === 'cancelled' || status === 'completed') {
+      if (status === "cancelled" || status === "completed") {
         pa.push(a);
         continue;
       }
       if (t >= tNow) up.push(a);
       else pa.push(a);
     }
-    up.sort((a, b) => new Date(a.slot!.slotTime).getTime() - new Date(b.slot!.slotTime).getTime());
-    pa.sort((a, b) => new Date(b.slot!.slotTime).getTime() - new Date(a.slot!.slotTime).getTime());
+    up.sort(
+      (a, b) =>
+        new Date(a.slot!.slotTime).getTime() -
+        new Date(b.slot!.slotTime).getTime(),
+    );
+    pa.sort(
+      (a, b) =>
+        new Date(b.slot!.slotTime).getTime() -
+        new Date(a.slot!.slotTime).getTime(),
+    );
     return { upcoming: up, past: pa };
   }, [appointments]);
 
   const completedCount = useMemo(
-    () => appointments.filter((a) => a.status.toLowerCase() === 'completed').length,
+    () =>
+      appointments.filter((a) => a.status.toLowerCase() === "completed").length,
     [appointments],
   );
 
   const totalSpent = useMemo(
-    () => payments.filter((p) => p.status === 'paid').reduce((sum, p) => sum + (p.amount ?? 0), 0),
+    () =>
+      payments
+        .filter((p) => p.status === "paid")
+        .reduce((sum, p) => sum + (p.amount ?? 0), 0),
     [payments],
   );
 
   const paidPaymentCount = useMemo(
-    () => payments.filter((p) => p.status === 'paid').length,
+    () => payments.filter((p) => p.status === "paid").length,
     [payments],
   );
 
   const filteredPayments = useMemo(
-    () => (paymentFilter === 'all' ? payments : payments.filter((p) => p.status === paymentFilter)),
+    () =>
+      paymentFilter === "all"
+        ? payments
+        : payments.filter((p) => p.status === paymentFilter),
     [payments, paymentFilter],
   );
 
@@ -374,7 +449,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Không tải được kết quả khám',
+            : "Không tải được kết quả khám",
       );
     } finally {
       setRecordLoading(false);
@@ -391,13 +466,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
 
   const openCancelModal = (apt: ApiAppointment) => {
     setCancelTarget(apt);
-    setCancelReason('');
+    setCancelReason("");
     setCancelError(null);
   };
   const closeCancelModal = () => {
     if (cancelBusy) return;
     setCancelTarget(null);
-    setCancelReason('');
+    setCancelReason("");
     setCancelError(null);
   };
   const submitCancel = async () => {
@@ -405,30 +480,34 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
     setCancelBusy(true);
     setCancelError(null);
     try {
-      await api.cancelMyAppointment(cancelTarget.id, cancelReason.trim() || null);
+      await api.cancelMyAppointment(
+        cancelTarget.id,
+        cancelReason.trim() || null,
+      );
       const list = await api.getMyAppointments();
       setAppointments(list);
-      toast.success('Đã huỷ cuộc hẹn.');
+      toast.success("Đã huỷ cuộc hẹn.");
       setCancelTarget(null);
-      setCancelReason('');
+      setCancelReason("");
     } catch (e) {
       setCancelError(
         e instanceof ApiRequestError
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Không huỷ được cuộc hẹn',
+            : "Không huỷ được cuộc hẹn",
       );
     } finally {
       setCancelBusy(false);
     }
   };
 
-  const firstName = user?.fullName?.trim().split(/\s+/).pop() ?? 'bạn';
+  const firstName = user?.fullName?.trim().split(/\s+/).pop() ?? "bạn";
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-slate-50 via-white to-sky-50/30">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-10 space-y-6">
+        <PatientAppointmentTools />
         <AdSlotSection placement="dashboard_user" aspect="6/1" />
         {/* HERO: Profile card */}
         {showPatientProfile && user && (
@@ -462,7 +541,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
 
                   <div className="flex-1 min-w-0 text-center sm:text-left">
                     <p className="text-xs font-semibold text-primary uppercase tracking-wider mb-1">
-                      Xin chào, {firstName} 
+                      Xin chào, {firstName}
                     </p>
                     <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
                       {user.fullName}
@@ -470,14 +549,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
                     <div className="mt-3 flex flex-col sm:flex-row sm:flex-wrap items-center sm:items-start gap-2 sm:gap-x-5 sm:gap-y-1.5 text-sm text-slate-600">
                       <span className="inline-flex items-center gap-1.5">
                         <Mail className="w-4 h-4 text-slate-400 shrink-0" />
-                        <span className="truncate max-w-[18rem]">{user.email}</span>
+                        <span className="truncate max-w-[18rem]">
+                          {user.email}
+                        </span>
                       </span>
                       <span className="inline-flex items-center gap-1.5">
                         <Phone className="w-4 h-4 text-slate-400 shrink-0" />
                         {user.phone ? (
                           <span>{user.phone}</span>
                         ) : (
-                          <span className="italic text-slate-400">Chưa cập nhật SĐT</span>
+                          <span className="italic text-slate-400">
+                            Chưa cập nhật SĐT
+                          </span>
                         )}
                       </span>
                     </div>
@@ -494,7 +577,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
                     </button>
                     <button
                       type="button"
-                      onClick={() => onNavigate?.('search')}
+                      onClick={() => onNavigate?.("search")}
                       className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-xl font-bold text-sm hover:bg-primary/90 transition-colors shadow-md shadow-primary/20"
                     >
                       <Calendar className="w-4 h-4" />
@@ -528,19 +611,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
                       <input
                         type="text"
                         value={editForm.fullName}
-                        onChange={(e) => setEditForm((f) => ({ ...f, fullName: e.target.value }))}
+                        onChange={(e) =>
+                          setEditForm((f) => ({
+                            ...f,
+                            fullName: e.target.value,
+                          }))
+                        }
                         className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-primary outline-none ${
-                          editFieldErrors.fullName ? 'border-red-300' : 'border-slate-200'
+                          editFieldErrors.fullName
+                            ? "border-red-300"
+                            : "border-slate-200"
                         }`}
                         placeholder="Nguyễn Văn A"
                         disabled={editBusy}
                       />
                       {editFieldErrors.fullName && (
-                        <p className="mt-1 text-xs text-red-600">{editFieldErrors.fullName}</p>
+                        <p className="mt-1 text-xs text-red-600">
+                          {editFieldErrors.fullName}
+                        </p>
                       )}
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Email
+                      </label>
                       <input
                         type="email"
                         value={user.email}
@@ -558,37 +652,55 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
                       <input
                         type="tel"
                         value={editForm.phone}
-                        onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
+                        onChange={(e) =>
+                          setEditForm((f) => ({ ...f, phone: e.target.value }))
+                        }
                         className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-primary outline-none ${
-                          editFieldErrors.phone ? 'border-red-300' : 'border-slate-200'
+                          editFieldErrors.phone
+                            ? "border-red-300"
+                            : "border-slate-200"
                         }`}
                         placeholder="0901234567"
                         disabled={editBusy}
                       />
                       {editFieldErrors.phone && (
-                        <p className="mt-1 text-xs text-red-600">{editFieldErrors.phone}</p>
+                        <p className="mt-1 text-xs text-red-600">
+                          {editFieldErrors.phone}
+                        </p>
                       )}
                     </div>
 
                     <div className="mt-2 rounded-2xl border border-slate-200 bg-slate-50/40 p-4">
                       <div className="flex items-start justify-between gap-4">
                         <div>
-                          <p className="text-sm font-bold text-slate-900">Đổi mật khẩu (tuỳ chọn)</p>
+                          <p className="text-sm font-bold text-slate-900">
+                            Đổi mật khẩu (tuỳ chọn)
+                          </p>
                           <p className="text-xs text-slate-500 mt-0.5">
-                            Nếu không muốn đổi mật khẩu, hãy để trống các ô bên dưới.
+                            Nếu không muốn đổi mật khẩu, hãy để trống các ô bên
+                            dưới.
                           </p>
                         </div>
                       </div>
                       <div className="grid sm:grid-cols-2 gap-3 mt-4">
                         <div className="sm:col-span-2">
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Mật khẩu hiện tại</label>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">
+                            Mật khẩu hiện tại
+                          </label>
                           <div className="relative">
                             <input
-                              type={showCurrentPwd ? 'text' : 'password'}
+                              type={showCurrentPwd ? "text" : "password"}
                               value={pwdForm.currentPassword}
-                              onChange={(e) => setPwdForm((f) => ({ ...f, currentPassword: e.target.value }))}
+                              onChange={(e) =>
+                                setPwdForm((f) => ({
+                                  ...f,
+                                  currentPassword: e.target.value,
+                                }))
+                              }
                               className={`w-full px-4 pr-12 py-2.5 border rounded-xl focus:ring-2 focus:ring-primary outline-none ${
-                                editFieldErrors.currentPassword ? 'border-red-300 bg-red-50/40' : 'border-slate-200'
+                                editFieldErrors.currentPassword
+                                  ? "border-red-300 bg-red-50/40"
+                                  : "border-slate-200"
                               }`}
                               placeholder="••••••••"
                               disabled={editBusy}
@@ -598,24 +710,41 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
                               onClick={() => setShowCurrentPwd((v) => !v)}
                               disabled={editBusy}
                               className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-                              aria-label={showCurrentPwd ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                              aria-label={
+                                showCurrentPwd ? "Ẩn mật khẩu" : "Hiện mật khẩu"
+                              }
                             >
-                              {showCurrentPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              {showCurrentPwd ? (
+                                <EyeOff className="w-4 h-4" />
+                              ) : (
+                                <Eye className="w-4 h-4" />
+                              )}
                             </button>
                           </div>
                           {editFieldErrors.currentPassword ? (
-                            <p className="mt-1 text-xs text-red-600">{editFieldErrors.currentPassword}</p>
+                            <p className="mt-1 text-xs text-red-600">
+                              {editFieldErrors.currentPassword}
+                            </p>
                           ) : null}
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Mật khẩu mới</label>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">
+                            Mật khẩu mới
+                          </label>
                           <div className="relative">
                             <input
-                              type={showNewPwd ? 'text' : 'password'}
+                              type={showNewPwd ? "text" : "password"}
                               value={pwdForm.password}
-                              onChange={(e) => setPwdForm((f) => ({ ...f, password: e.target.value }))}
+                              onChange={(e) =>
+                                setPwdForm((f) => ({
+                                  ...f,
+                                  password: e.target.value,
+                                }))
+                              }
                               className={`w-full px-4 pr-12 py-2.5 border rounded-xl focus:ring-2 focus:ring-primary outline-none ${
-                                editFieldErrors.password ? 'border-red-300 bg-red-50/40' : 'border-slate-200'
+                                editFieldErrors.password
+                                  ? "border-red-300 bg-red-50/40"
+                                  : "border-slate-200"
                               }`}
                               placeholder="Ít nhất 8 ký tự, có hoa/thường/số/ký tự đặc biệt"
                               disabled={editBusy}
@@ -625,24 +754,41 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
                               onClick={() => setShowNewPwd((v) => !v)}
                               disabled={editBusy}
                               className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-                              aria-label={showNewPwd ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                              aria-label={
+                                showNewPwd ? "Ẩn mật khẩu" : "Hiện mật khẩu"
+                              }
                             >
-                              {showNewPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              {showNewPwd ? (
+                                <EyeOff className="w-4 h-4" />
+                              ) : (
+                                <Eye className="w-4 h-4" />
+                              )}
                             </button>
                           </div>
                           {editFieldErrors.password ? (
-                            <p className="mt-1 text-xs text-red-600">{editFieldErrors.password}</p>
+                            <p className="mt-1 text-xs text-red-600">
+                              {editFieldErrors.password}
+                            </p>
                           ) : null}
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Nhập lại mật khẩu mới</label>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">
+                            Nhập lại mật khẩu mới
+                          </label>
                           <div className="relative">
                             <input
-                              type={showConfirmPwd ? 'text' : 'password'}
+                              type={showConfirmPwd ? "text" : "password"}
                               value={pwdForm.confirmPassword}
-                              onChange={(e) => setPwdForm((f) => ({ ...f, confirmPassword: e.target.value }))}
+                              onChange={(e) =>
+                                setPwdForm((f) => ({
+                                  ...f,
+                                  confirmPassword: e.target.value,
+                                }))
+                              }
                               className={`w-full px-4 pr-12 py-2.5 border rounded-xl focus:ring-2 focus:ring-primary outline-none ${
-                                editFieldErrors.confirmPassword ? 'border-red-300 bg-red-50/40' : 'border-slate-200'
+                                editFieldErrors.confirmPassword
+                                  ? "border-red-300 bg-red-50/40"
+                                  : "border-slate-200"
                               }`}
                               placeholder="••••••••"
                               disabled={editBusy}
@@ -652,13 +798,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
                               onClick={() => setShowConfirmPwd((v) => !v)}
                               disabled={editBusy}
                               className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-                              aria-label={showConfirmPwd ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                              aria-label={
+                                showConfirmPwd ? "Ẩn mật khẩu" : "Hiện mật khẩu"
+                              }
                             >
-                              {showConfirmPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              {showConfirmPwd ? (
+                                <EyeOff className="w-4 h-4" />
+                              ) : (
+                                <Eye className="w-4 h-4" />
+                              )}
                             </button>
                           </div>
                           {editFieldErrors.confirmPassword ? (
-                            <p className="mt-1 text-xs text-red-600">{editFieldErrors.confirmPassword}</p>
+                            <p className="mt-1 text-xs text-red-600">
+                              {editFieldErrors.confirmPassword}
+                            </p>
                           ) : null}
                         </div>
                       </div>
@@ -694,33 +848,32 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
           </section>
         )}
 
-
         {/* STAT CARDS */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <StatCard
             icon={CalendarClock}
-            label="Lịch sắp tới"
+            label="Lịch sắp tới gần đây"
             value={String(upcoming.length)}
             tone="sky"
             loading={loadingAppointments}
           />
           <StatCard
             icon={CheckCircle2}
-            label="Đã hoàn tất"
+            label="Lượt hoàn tất gần đây"
             value={String(completedCount)}
             tone="emerald"
             loading={loadingAppointments}
           />
           <StatCard
             icon={Receipt}
-            label="Đã thanh toán"
+            label="Đã thanh toán trong danh sách"
             value={String(paidPaymentCount)}
             tone="violet"
             loading={loadingPayments}
           />
           <StatCard
             icon={Wallet}
-            label="Tổng chi tiêu"
+            label="Đã chi trong danh sách"
             value={formatVnd(totalSpent)}
             tone="amber"
             small
@@ -734,30 +887,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
             <nav className="flex gap-1 overflow-x-auto -mb-px" role="tablist">
               <TabButton
                 icon={CalendarClock}
-                label="Lịch sắp tới"
+                label="Lịch sắp tới gần đây"
                 badge={upcoming.length}
-                active={activeTab === 'upcoming'}
-                onClick={() => setActiveTab('upcoming')}
+                active={activeTab === "upcoming"}
+                onClick={() => setActiveTab("upcoming")}
               />
               <TabButton
                 icon={ClipboardList}
                 label="Lịch sử khám"
                 badge={past.length}
-                active={activeTab === 'history'}
-                onClick={() => setActiveTab('history')}
+                active={activeTab === "history"}
+                onClick={() => setActiveTab("history")}
               />
               <TabButton
                 icon={Wallet}
                 label="Lịch sử giao dịch"
                 badge={payments.length}
-                active={activeTab === 'payments'}
-                onClick={() => setActiveTab('payments')}
+                active={activeTab === "payments"}
+                onClick={() => setActiveTab("payments")}
               />
             </nav>
           </div>
 
           <div className="p-5 sm:p-6">
-            {activeTab === 'upcoming' && (
+            {activeTab === "upcoming" && (
               <UpcomingTab
                 upcoming={upcoming}
                 loading={loadingAppointments}
@@ -765,21 +918,38 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onProfileUpdated, on
                 onCancel={openCancelModal}
               />
             )}
-            {activeTab === 'history' && (
+            {activeTab === "history" && (
               <HistoryTab
                 past={past}
                 loading={loadingAppointments}
                 onViewRecord={openMedicalRecordModal}
               />
             )}
-            {activeTab === 'payments' && (
-              <PaymentsTab
-                payments={filteredPayments}
-                loading={loadingPayments}
-                filter={paymentFilter}
-                onChangeFilter={setPaymentFilter}
-                totalCount={payments.length}
-              />
+            {activeTab === "payments" && (
+              <>
+                <PaymentsTab
+                  payments={filteredPayments}
+                  loading={loadingPayments}
+                  filter={paymentFilter}
+                  onChangeFilter={setPaymentFilter}
+                  totalCount={payments.length}
+                />
+                <div className="flex gap-4 items-center mt-4">
+                  <button
+                    disabled={paymentsPage === 1 || loadingPayments}
+                    onClick={() => setPaymentsPage((p) => p - 1)}
+                  >
+                    Trang trước
+                  </button>
+                  <span>Trang {paymentsPage}</span>
+                  <button
+                    disabled={payments.length < 50 || loadingPayments}
+                    onClick={() => setPaymentsPage((p) => p + 1)}
+                  >
+                    Trang sau
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </section>
@@ -810,23 +980,43 @@ interface StatCardProps {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
-  tone: 'sky' | 'emerald' | 'violet' | 'amber';
+  tone: "sky" | "emerald" | "violet" | "amber";
   small?: boolean;
   loading?: boolean;
 }
 
-const STAT_TONE: Record<StatCardProps['tone'], { bg: string; text: string; ring: string }> = {
-  sky: { bg: 'bg-sky-50', text: 'text-sky-600', ring: 'ring-sky-100' },
-  emerald: { bg: 'bg-emerald-50', text: 'text-emerald-600', ring: 'ring-emerald-100' },
-  violet: { bg: 'bg-violet-50', text: 'text-violet-600', ring: 'ring-violet-100' },
-  amber: { bg: 'bg-amber-50', text: 'text-amber-600', ring: 'ring-amber-100' },
+const STAT_TONE: Record<
+  StatCardProps["tone"],
+  { bg: string; text: string; ring: string }
+> = {
+  sky: { bg: "bg-sky-50", text: "text-sky-600", ring: "ring-sky-100" },
+  emerald: {
+    bg: "bg-emerald-50",
+    text: "text-emerald-600",
+    ring: "ring-emerald-100",
+  },
+  violet: {
+    bg: "bg-violet-50",
+    text: "text-violet-600",
+    ring: "ring-violet-100",
+  },
+  amber: { bg: "bg-amber-50", text: "text-amber-600", ring: "ring-amber-100" },
 };
 
-const StatCard: React.FC<StatCardProps> = ({ icon: Icon, label, value, tone, small, loading }) => {
+const StatCard: React.FC<StatCardProps> = ({
+  icon: Icon,
+  label,
+  value,
+  tone,
+  small,
+  loading,
+}) => {
   const t = STAT_TONE[tone];
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm hover:shadow-md hover:border-slate-300 transition-all">
-      <div className={`w-10 h-10 rounded-xl ${t.bg} ${t.text} ring-1 ${t.ring} flex items-center justify-center mb-3`}>
+      <div
+        className={`w-10 h-10 rounded-xl ${t.bg} ${t.text} ring-1 ${t.ring} flex items-center justify-center mb-3`}
+      >
         <Icon className="w-5 h-5" />
       </div>
       <p className="text-xs font-medium text-slate-500 mb-1">{label}</p>
@@ -835,7 +1025,7 @@ const StatCard: React.FC<StatCardProps> = ({ icon: Icon, label, value, tone, sma
       ) : (
         <p
           className={`font-bold text-slate-900 tabular-nums tracking-tight ${
-            small ? 'text-base sm:text-lg' : 'text-2xl sm:text-3xl'
+            small ? "text-base sm:text-lg" : "text-2xl sm:text-3xl"
           }`}
         >
           {value}
@@ -853,7 +1043,13 @@ interface TabButtonProps {
   onClick: () => void;
 }
 
-const TabButton: React.FC<TabButtonProps> = ({ icon: Icon, label, badge, active, onClick }) => {
+const TabButton: React.FC<TabButtonProps> = ({
+  icon: Icon,
+  label,
+  badge,
+  active,
+  onClick,
+}) => {
   return (
     <button
       type="button"
@@ -862,8 +1058,8 @@ const TabButton: React.FC<TabButtonProps> = ({ icon: Icon, label, badge, active,
       onClick={onClick}
       className={`relative inline-flex items-center gap-2 px-4 sm:px-5 py-3 text-sm font-semibold whitespace-nowrap transition-colors border-b-2 ${
         active
-          ? 'text-primary border-primary'
-          : 'text-slate-500 hover:text-slate-700 border-transparent hover:border-slate-200'
+          ? "text-primary border-primary"
+          : "text-slate-500 hover:text-slate-700 border-transparent hover:border-slate-200"
       }`}
     >
       <Icon className="w-4 h-4" />
@@ -871,7 +1067,9 @@ const TabButton: React.FC<TabButtonProps> = ({ icon: Icon, label, badge, active,
       {badge != null && badge > 0 && (
         <span
           className={`min-w-[1.25rem] h-5 px-1.5 inline-flex items-center justify-center text-[11px] font-bold rounded-full tabular-nums ${
-            active ? 'bg-primary/15 text-primary' : 'bg-slate-200 text-slate-600'
+            active
+              ? "bg-primary/15 text-primary"
+              : "bg-slate-200 text-slate-600"
           }`}
         >
           {badge}
@@ -888,7 +1086,12 @@ interface UpcomingTabProps {
   onCancel: (apt: ApiAppointment) => void;
 }
 
-const UpcomingTab: React.FC<UpcomingTabProps> = ({ upcoming, loading, onNavigate, onCancel }) => {
+const UpcomingTab: React.FC<UpcomingTabProps> = ({
+  upcoming,
+  loading,
+  onNavigate,
+  onCancel,
+}) => {
   if (loading) {
     return (
       <div className="flex justify-center py-16 text-slate-500 text-sm">
@@ -907,7 +1110,7 @@ const UpcomingTab: React.FC<UpcomingTabProps> = ({ upcoming, loading, onNavigate
         </p>
         <button
           type="button"
-          onClick={() => onNavigate?.('search')}
+          onClick={() => onNavigate?.("search")}
           className="mt-4 px-5 py-2.5 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90"
         >
           Tìm bác sĩ
@@ -918,13 +1121,18 @@ const UpcomingTab: React.FC<UpcomingTabProps> = ({ upcoming, loading, onNavigate
   return (
     <div className="grid sm:grid-cols-2 gap-4">
       {upcoming.map((apt) => {
-        const doctorName = apt.doctor ? formatDoctorName(apt.doctor.fullName) : 'Bác sĩ';
-        const specialty = apt.doctor?.departmentName ?? '—';
-        const dateLabel = apt.slot ? formatAppointmentDateTime(apt.slot.slotTime) : '—';
-        const paid = apt.status === 'confirmed';
-        const paymentStatus = paid ? 'Đã đặt cọc' : 'Chưa thanh toán cọc';
+        const doctorName = apt.doctor
+          ? formatDoctorName(apt.doctor.fullName)
+          : "Bác sĩ";
+        const specialty = apt.doctor?.departmentName ?? "—";
+        const dateLabel = apt.slot
+          ? formatAppointmentDateTime(apt.slot.slotTime)
+          : "—";
+        const paid = apt.status === "confirmed";
+        const paymentStatus = paid ? "Đã đặt cọc" : "Chưa thanh toán cọc";
         const avatarSrc = resolveApiAssetUrl(apt.doctor?.avatarUrl);
-        const canCancel = apt.status === 'pending' || apt.status === 'confirmed';
+        const canCancel =
+          apt.status === "pending" || apt.status === "confirmed";
         return (
           <div
             key={apt.id}
@@ -933,7 +1141,11 @@ const UpcomingTab: React.FC<UpcomingTabProps> = ({ upcoming, loading, onNavigate
             <div className="p-5 flex gap-4">
               <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-100 shrink-0 flex items-center justify-center ring-2 ring-white shadow-sm">
                 {avatarSrc ? (
-                  <img src={avatarSrc} alt="" className="w-full h-full object-cover" />
+                  <img
+                    src={avatarSrc}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
                 ) : (
                   <User className="w-7 h-7 text-slate-400" />
                 )}
@@ -941,8 +1153,12 @@ const UpcomingTab: React.FC<UpcomingTabProps> = ({ upcoming, loading, onNavigate
               <div className="min-w-0 flex-1 space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <h3 className="font-bold text-slate-900 leading-tight truncate">{doctorName}</h3>
-                    <p className="text-sm font-medium text-primary mt-0.5 truncate">{specialty}</p>
+                    <h3 className="font-bold text-slate-900 leading-tight truncate">
+                      {doctorName}
+                    </h3>
+                    <p className="text-sm font-medium text-primary mt-0.5 truncate">
+                      {specialty}
+                    </p>
                   </div>
                   {canCancel && (
                     <button
@@ -962,11 +1178,15 @@ const UpcomingTab: React.FC<UpcomingTabProps> = ({ upcoming, loading, onNavigate
                 <span
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${
                     paid
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                      : 'bg-amber-50 text-amber-900 border-amber-200'
+                      ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                      : "bg-amber-50 text-amber-900 border-amber-200"
                   }`}
                 >
-                  {paid ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Clock3 className="w-3.5 h-3.5" />}
+                  {paid ? (
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  ) : (
+                    <Clock3 className="w-3.5 h-3.5" />
+                  )}
                   {paymentStatus}
                 </span>
               </div>
@@ -984,7 +1204,11 @@ interface HistoryTabProps {
   onViewRecord: (appointmentId: string) => void;
 }
 
-const HistoryTab: React.FC<HistoryTabProps> = ({ past, loading, onViewRecord }) => {
+const HistoryTab: React.FC<HistoryTabProps> = ({
+  past,
+  loading,
+  onViewRecord,
+}) => {
   if (loading) {
     return (
       <div className="flex justify-center py-16 text-slate-500 text-sm">
@@ -996,7 +1220,8 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ past, loading, onViewRecord }) 
   if (past.length === 0) {
     return (
       <div className="px-6 py-16 text-center text-sm text-slate-500">
-        Chưa có lịch nào đã qua. Sau khi khám, trạng thái sẽ cập nhật theo dữ liệu từ hệ thống.
+        Chưa có lịch nào đã qua. Sau khi khám, trạng thái sẽ cập nhật theo dữ
+        liệu từ hệ thống.
       </div>
     );
   }
@@ -1024,26 +1249,35 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ past, loading, onViewRecord }) 
         </thead>
         <tbody className="divide-y divide-slate-100">
           {past.map((apt) => {
-            const doctorName = apt.doctor ? formatDoctorName(apt.doctor.fullName) : '—';
+            const doctorName = apt.doctor
+              ? formatDoctorName(apt.doctor.fullName)
+              : "—";
             const dateStr =
-              apt.slot?.slotTime != null ? formatHistoryDate(apt.slot.slotTime) : '—';
+              apt.slot?.slotTime != null
+                ? formatHistoryDate(apt.slot.slotTime)
+                : "—";
             const timeStr =
               apt.slot?.slotTime != null
-                ? new Date(apt.slot.slotTime).toLocaleTimeString('vi-VN', {
-                    hour: '2-digit',
-                    minute: '2-digit',
+                ? new Date(apt.slot.slotTime).toLocaleTimeString("vi-VN", {
+                    hour: "2-digit",
+                    minute: "2-digit",
                   })
-                : '';
-            const reason = apt.symptoms?.trim() || '—';
+                : "";
+            const reason = apt.symptoms?.trim() || "—";
             const st = appointmentStatusPresentation(apt.status);
             const cancelReason = apt.cancelReason?.trim() || null;
-            const isAutoExpired = cancelReason?.startsWith('auto-expired');
+            const isAutoExpired = cancelReason?.startsWith("auto-expired");
             const cancelLabel = isAutoExpired
-              ? 'Tự huỷ do quá hạn thanh toán cọc'
+              ? "Tự huỷ do quá hạn thanh toán cọc"
               : cancelReason;
             return (
-              <tr key={apt.id} className="hover:bg-slate-50/60 transition-colors">
-                <td className="px-5 sm:px-6 py-4 font-semibold text-slate-900">{doctorName}</td>
+              <tr
+                key={apt.id}
+                className="hover:bg-slate-50/60 transition-colors"
+              >
+                <td className="px-5 sm:px-6 py-4 font-semibold text-slate-900">
+                  {doctorName}
+                </td>
                 <td className="px-5 py-4 text-slate-600 whitespace-nowrap">
                   {dateStr}
                   {timeStr ? (
@@ -1053,7 +1287,10 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ past, loading, onViewRecord }) 
                     </>
                   ) : null}
                 </td>
-                <td className="px-5 py-4 text-slate-600 max-w-[14rem] truncate" title={reason}>
+                <td
+                  className="px-5 py-4 text-slate-600 max-w-[14rem] truncate"
+                  title={reason}
+                >
                   {reason}
                 </td>
                 <td className="px-5 py-4">
@@ -1063,7 +1300,7 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ past, loading, onViewRecord }) 
                   >
                     {st.label}
                   </span>
-                  {apt.status.toLowerCase() === 'cancelled' && cancelLabel && (
+                  {apt.status.toLowerCase() === "cancelled" && cancelLabel && (
                     <p
                       className="mt-1 text-[11px] text-slate-500 max-w-[14rem] truncate italic"
                       title={cancelLabel}
@@ -1083,7 +1320,9 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ past, loading, onViewRecord }) 
                       Xem kết quả
                     </button>
                   ) : (
-                    <span className="text-xs text-slate-400 italic">Chưa có</span>
+                    <span className="text-xs text-slate-400 italic">
+                      Chưa có
+                    </span>
                   )}
                 </td>
               </tr>
@@ -1139,7 +1378,9 @@ const MedicalRecordModal: React.FC<MedicalRecordModalProps> = ({
               <div className="w-12 h-12 rounded-full bg-red-50 text-red-500 flex items-center justify-center">
                 <AlertCircle className="w-6 h-6" />
               </div>
-              <p className="text-sm font-semibold text-slate-800">Không tải được kết quả</p>
+              <p className="text-sm font-semibold text-slate-800">
+                Không tải được kết quả
+              </p>
               <p className="text-xs text-slate-500 max-w-sm">{error}</p>
             </div>
           ) : record ? (
@@ -1187,8 +1428,12 @@ const MedicalRecordModal: React.FC<MedicalRecordModalProps> = ({
   );
 };
 
-const RecordHeader: React.FC<{ record: ApiPatientMedicalRecord }> = ({ record }) => {
-  const doctorName = record.doctor ? formatDoctorName(record.doctor.fullName) : 'Bác sĩ';
+const RecordHeader: React.FC<{ record: ApiPatientMedicalRecord }> = ({
+  record,
+}) => {
+  const doctorName = record.doctor
+    ? formatDoctorName(record.doctor.fullName)
+    : "Bác sĩ";
   const dept = record.doctor?.departmentName ?? null;
   const slotIso = record.slotTime;
   const slotLabel = slotIso ? formatFullDateTimeVi(slotIso) : null;
@@ -1204,18 +1449,28 @@ const RecordHeader: React.FC<{ record: ApiPatientMedicalRecord }> = ({ record })
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="font-bold text-slate-900 leading-tight truncate">{doctorName}</p>
-        {dept ? <p className="text-xs text-primary font-semibold mt-0.5">{dept}</p> : null}
+        <p className="font-bold text-slate-900 leading-tight truncate">
+          {doctorName}
+        </p>
+        {dept ? (
+          <p className="text-xs text-primary font-semibold mt-0.5">{dept}</p>
+        ) : null}
         <div className="mt-2 grid sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-600">
           {slotLabel ? (
             <span className="inline-flex items-center gap-1.5">
               <Calendar className="w-3.5 h-3.5 text-slate-400" />
-              <span>Ngày khám: <strong className="text-slate-800">{slotLabel}</strong></span>
+              <span>
+                Ngày khám:{" "}
+                <strong className="text-slate-800">{slotLabel}</strong>
+              </span>
             </span>
           ) : null}
           <span className="inline-flex items-center gap-1.5">
             <FileText className="w-3.5 h-3.5 text-slate-400" />
-            <span>Lập hồ sơ: <strong className="text-slate-800">{createdLabel}</strong></span>
+            <span>
+              Lập hồ sơ:{" "}
+              <strong className="text-slate-800">{createdLabel}</strong>
+            </span>
           </span>
         </div>
       </div>
@@ -1243,9 +1498,13 @@ const CancelAppointmentModal: React.FC<CancelAppointmentModalProps> = ({
   onConfirm,
 }) => {
   const open = Boolean(target);
-  const isPaid = target?.status === 'confirmed';
-  const doctorName = target?.doctor ? formatDoctorName(target.doctor.fullName) : 'Bác sĩ';
-  const dateLabel = target?.slot ? formatAppointmentDateTime(target.slot.slotTime) : '—';
+  const isPaid = target?.status === "confirmed";
+  const doctorName = target?.doctor
+    ? formatDoctorName(target.doctor.fullName)
+    : "Bác sĩ";
+  const dateLabel = target?.slot
+    ? formatAppointmentDateTime(target.slot.slotTime)
+    : "—";
 
   return (
     <ModalOverlay open={open} onClose={onClose}>
@@ -1256,8 +1515,12 @@ const CancelAppointmentModal: React.FC<CancelAppointmentModalProps> = ({
               <AlertTriangle className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <h3 className="text-lg font-bold text-slate-900">Huỷ cuộc hẹn?</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Hành động không thể hoàn tác</p>
+              <h3 className="text-lg font-bold text-slate-900">
+                Huỷ cuộc hẹn?
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Hành động không thể hoàn tác
+              </p>
             </div>
           </div>
           <ModalCloseButton onClose={onClose} disabled={busy} />
@@ -1267,7 +1530,9 @@ const CancelAppointmentModal: React.FC<CancelAppointmentModalProps> = ({
           <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm text-slate-700">
             <p className="font-semibold text-slate-900">{doctorName}</p>
             {target?.doctor?.departmentName && (
-              <p className="text-xs text-primary mt-0.5">{target.doctor.departmentName}</p>
+              <p className="text-xs text-primary mt-0.5">
+                {target.doctor.departmentName}
+              </p>
             )}
             <p className="text-xs text-slate-600 mt-1.5">
               <Calendar className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5 text-slate-400" />
@@ -1277,23 +1542,28 @@ const CancelAppointmentModal: React.FC<CancelAppointmentModalProps> = ({
 
           {isPaid ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-              <p className="text-sm font-bold text-amber-900">Cảnh báo: Mất tiền cọc</p>
+              <p className="text-sm font-bold text-amber-900">
+                Cảnh báo: Mất tiền cọc
+              </p>
               <p className="text-xs text-amber-800 mt-1 leading-relaxed">
-                Cuộc hẹn này đã được đặt cọc thành công. Theo chính sách hiện tại, **huỷ
-                lịch sẽ mất tiền cọc** (cọc đã trả là phí giữ chỗ, không hoàn lại).
+                Cuộc hẹn này đã được đặt cọc thành công. Theo chính sách hiện
+                tại, **huỷ lịch sẽ mất tiền cọc** (cọc đã trả là phí giữ chỗ,
+                không hoàn lại).
               </p>
             </div>
           ) : (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
               <p className="text-xs text-slate-700 leading-relaxed">
-                Cuộc hẹn này chưa thanh toán cọc, huỷ ngay sẽ không phát sinh phí.
+                Cuộc hẹn này chưa thanh toán cọc, huỷ ngay sẽ không phát sinh
+                phí.
               </p>
             </div>
           )}
 
           <div>
             <label className="text-xs font-semibold text-slate-700">
-              Lý do huỷ <span className="text-slate-400 font-normal">(tuỳ chọn)</span>
+              Lý do huỷ{" "}
+              <span className="text-slate-400 font-normal">(tuỳ chọn)</span>
             </label>
             <textarea
               value={reason}
@@ -1329,8 +1599,12 @@ const CancelAppointmentModal: React.FC<CancelAppointmentModalProps> = ({
             disabled={busy}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-600 text-white font-bold text-sm hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-            {isPaid ? 'Huỷ và mất cọc' : 'Xác nhận huỷ'}
+            {busy ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Trash2 className="w-4 h-4" />
+            )}
+            {isPaid ? "Huỷ và mất cọc" : "Xác nhận huỷ"}
           </button>
         </div>
       </div>
@@ -1340,19 +1614,35 @@ const CancelAppointmentModal: React.FC<CancelAppointmentModalProps> = ({
 
 interface RecordSectionProps {
   icon: React.ComponentType<{ className?: string }>;
-  tone: 'sky' | 'violet' | 'emerald' | 'amber';
+  tone: "sky" | "violet" | "emerald" | "amber";
   label: string;
   value: string | null;
 }
 
-const RECORD_TONE: Record<RecordSectionProps['tone'], { bg: string; text: string; ring: string }> = {
-  sky: { bg: 'bg-sky-50', text: 'text-sky-700', ring: 'ring-sky-100' },
-  violet: { bg: 'bg-violet-50', text: 'text-violet-700', ring: 'ring-violet-100' },
-  emerald: { bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-100' },
-  amber: { bg: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-100' },
+const RECORD_TONE: Record<
+  RecordSectionProps["tone"],
+  { bg: string; text: string; ring: string }
+> = {
+  sky: { bg: "bg-sky-50", text: "text-sky-700", ring: "ring-sky-100" },
+  violet: {
+    bg: "bg-violet-50",
+    text: "text-violet-700",
+    ring: "ring-violet-100",
+  },
+  emerald: {
+    bg: "bg-emerald-50",
+    text: "text-emerald-700",
+    ring: "ring-emerald-100",
+  },
+  amber: { bg: "bg-amber-50", text: "text-amber-700", ring: "ring-amber-100" },
 };
 
-const RecordSection: React.FC<RecordSectionProps> = ({ icon: Icon, tone, label, value }) => {
+const RecordSection: React.FC<RecordSectionProps> = ({
+  icon: Icon,
+  tone,
+  label,
+  value,
+}) => {
   const t = RECORD_TONE[tone];
   const isEmpty = !value || !value.trim();
   return (
@@ -1367,7 +1657,9 @@ const RecordSection: React.FC<RecordSectionProps> = ({ icon: Icon, tone, label, 
       </div>
       <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
         {isEmpty ? (
-          <span className="italic text-slate-400">Bác sĩ không ghi nội dung này</span>
+          <span className="italic text-slate-400">
+            Bác sĩ không ghi nội dung này
+          </span>
         ) : (
           value
         )}
@@ -1385,10 +1677,10 @@ interface PaymentsTabProps {
 }
 
 const PAYMENT_FILTERS: { id: PaymentFilter; label: string }[] = [
-  { id: 'all', label: 'Tất cả' },
-  { id: 'paid', label: 'Đã thanh toán' },
-  { id: 'pending', label: 'Đang chờ' },
-  { id: 'failed', label: 'Thất bại' },
+  { id: "all", label: "Tất cả" },
+  { id: "paid", label: "Đã thanh toán" },
+  { id: "pending", label: "Đang chờ" },
+  { id: "failed", label: "Thất bại" },
 ];
 
 const PaymentsTab: React.FC<PaymentsTabProps> = ({
@@ -1413,8 +1705,8 @@ const PaymentsTab: React.FC<PaymentsTabProps> = ({
               onClick={() => onChangeFilter(f.id)}
               className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
                 filter === f.id
-                  ? 'bg-primary text-white border-primary'
-                  : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                  ? "bg-primary text-white border-primary"
+                  : "bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
               }`}
             >
               {f.label}
@@ -1433,7 +1725,8 @@ const PaymentsTab: React.FC<PaymentsTabProps> = ({
           <Wallet className="w-10 h-10 mx-auto text-slate-300 mb-3" />
           <p className="text-slate-700 font-medium">Chưa có giao dịch nào</p>
           <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
-            Khi bạn đặt lịch và thanh toán cọc qua PayOS, các giao dịch sẽ hiển thị tại đây.
+            Khi bạn đặt lịch và thanh toán cọc qua PayOS, các giao dịch sẽ hiển
+            thị tại đây.
           </p>
         </div>
       ) : payments.length === 0 ? (
@@ -1444,7 +1737,7 @@ const PaymentsTab: React.FC<PaymentsTabProps> = ({
           </p>
           <button
             type="button"
-            onClick={() => onChangeFilter('all')}
+            onClick={() => onChangeFilter("all")}
             className="mt-4 px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/5 rounded-lg"
           >
             Xem tất cả
@@ -1461,7 +1754,9 @@ const PaymentsTab: React.FC<PaymentsTabProps> = ({
   );
 };
 
-const PaymentRow: React.FC<{ payment: ApiPaymentHistoryItem }> = ({ payment }) => {
+const PaymentRow: React.FC<{ payment: ApiPaymentHistoryItem }> = ({
+  payment,
+}) => {
   const st = paymentStatusPresentation(payment.status);
   const doctorName = payment.appointment?.doctor
     ? formatDoctorName(payment.appointment.doctor.fullName)
@@ -1471,7 +1766,9 @@ const PaymentRow: React.FC<{ payment: ApiPaymentHistoryItem }> = ({ payment }) =
     ? formatFullDateTimeVi(payment.appointment.slotTime)
     : null;
   const createdLabel = formatFullDateTimeVi(payment.createdAt);
-  const avatarSrc = resolveApiAssetUrl(payment.appointment?.doctor?.avatarUrl ?? null);
+  const avatarSrc = resolveApiAssetUrl(
+    payment.appointment?.doctor?.avatarUrl ?? null,
+  );
 
   return (
     <li className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden hover:border-slate-300 hover:shadow-md transition-all">
@@ -1479,7 +1776,11 @@ const PaymentRow: React.FC<{ payment: ApiPaymentHistoryItem }> = ({ payment }) =
         <div className="flex flex-col sm:flex-row sm:items-start gap-4">
           <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 shrink-0 flex items-center justify-center ring-1 ring-slate-100">
             {avatarSrc ? (
-              <img src={avatarSrc} alt="" className="w-full h-full object-cover" />
+              <img
+                src={avatarSrc}
+                alt=""
+                className="w-full h-full object-cover"
+              />
             ) : (
               <Receipt className="w-6 h-6 text-slate-400" />
             )}
@@ -1503,7 +1804,9 @@ const PaymentRow: React.FC<{ payment: ApiPaymentHistoryItem }> = ({ payment }) =
             {doctorName && (
               <p className="text-sm text-slate-700">
                 <span className="font-medium">{doctorName}</span>
-                {department && <span className="text-slate-500"> · {department}</span>}
+                {department && (
+                  <span className="text-slate-500"> · {department}</span>
+                )}
               </p>
             )}
 
@@ -1512,7 +1815,10 @@ const PaymentRow: React.FC<{ payment: ApiPaymentHistoryItem }> = ({ payment }) =
                 <Receipt className="w-3.5 h-3.5" />
                 {payment.payosOrderCode != null ? (
                   <>
-                    Mã đơn: <span className="font-semibold text-slate-700 tabular-nums">{payment.payosOrderCode}</span>
+                    Mã đơn:{" "}
+                    <span className="font-semibold text-slate-700 tabular-nums">
+                      {payment.payosOrderCode}
+                    </span>
                   </>
                 ) : (
                   <span className="italic">Không có mã đơn</span>
@@ -1531,17 +1837,23 @@ const PaymentRow: React.FC<{ payment: ApiPaymentHistoryItem }> = ({ payment }) =
               {payment.paymentMethod && (
                 <span className="inline-flex items-center gap-1">
                   <CreditCard className="w-3.5 h-3.5" />
-                  <span className="uppercase tracking-wide">{payment.paymentMethod}</span>
+                  <span className="uppercase tracking-wide">
+                    {payment.paymentMethod}
+                  </span>
                 </span>
               )}
             </div>
           </div>
 
           <div className="text-right shrink-0 sm:pl-4 sm:border-l sm:border-slate-100">
-            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Số tiền</p>
+            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+              Số tiền
+            </p>
             <p
               className={`text-lg sm:text-xl font-bold tabular-nums ${
-                payment.status === 'failed' ? 'text-slate-400 line-through' : 'text-slate-900'
+                payment.status === "failed"
+                  ? "text-slate-400 line-through"
+                  : "text-slate-900"
               }`}
             >
               {formatVnd(payment.amount)}

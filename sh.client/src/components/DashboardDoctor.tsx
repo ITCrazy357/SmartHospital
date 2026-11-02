@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Activity,
   BarChart3,
@@ -21,8 +21,8 @@ import {
   CheckCircle2,
   Stethoscope,
   Sparkles,
-} from 'lucide-react';
-import { api } from '../api/client';
+} from "lucide-react";
+import { api } from "../api/client";
 import type {
   ApiAppointmentSlot,
   ApiDoctorAppointment,
@@ -31,37 +31,43 @@ import type {
   ApiDoctorPatient,
   ApiDoctorPendingMedicalAppointment,
   ApiDoctorStats,
-} from '../api/client';
-import { useToast } from '../contexts/ToastContext';
+} from "../api/client";
+import { useToast } from "../contexts/ToastContext";
 import {
   firstWeekdayOnOrAfter,
   formatWorkdaysShortVi,
   isWeekendIsoDate,
   listWeekdayIsoDatesInRange,
-} from '../utils/weekdayCalendar';
-import { ModalCloseButton, ModalOverlay } from './ModalOverlay';
-import { DoctorAiAssistantTab } from './doctor/DoctorAiAssistantTab';
-import { ListPagination } from './ListPagination';
-import { usePagination, PAGE_SIZE } from '../utils/usePagination';
+} from "../utils/weekdayCalendar";
+import { ModalCloseButton, ModalOverlay } from "./ModalOverlay";
+import { DoctorAiAssistantTab } from "./doctor/DoctorAiAssistantTab";
+import { MedicalRecordHistory } from "./MedicalRecordHistory";
+import { ListPagination } from "./ListPagination";
+import { usePagination, PAGE_SIZE } from "../utils/usePagination";
 
 function formatSlotDate(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+  return d.toLocaleDateString("vi-VN", {
+    weekday: "short",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }
 
 function formatSlotTime(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
 }
 
 function formatStatus(status: string): string {
-  if (status === 'booked') return 'Đã đặt';
-  if (status === 'on_leave') return 'Nghỉ phép';
-  return 'Trống';
+  if (status === "booked") return "Đã đặt";
+  if (status === "on_leave") return "Nghỉ phép";
+  return "Trống";
 }
 
 function addDaysIso(isoDate: string, days: number): string {
-  const d = new Date(isoDate + 'T12:00:00');
+  const d = new Date(isoDate + "T12:00:00");
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
 }
@@ -72,7 +78,7 @@ function todayIso(): string {
 
 /** Trả về ngày thứ 2 (ISO YYYY-MM-DD) của tuần chứa ngày đã cho. */
 function startOfIsoWeek(isoDate: string): string {
-  const d = new Date(isoDate + 'T12:00:00');
+  const d = new Date(isoDate + "T12:00:00");
   const dow = d.getDay();
   const diff = dow === 0 ? -6 : 1 - dow;
   d.setDate(d.getDate() + diff);
@@ -85,25 +91,32 @@ function isoDateOf(d: Date): string {
 }
 
 function formatDayHeaderLong(iso: string): string {
-  const d = new Date(iso + 'T12:00:00');
-  return d.toLocaleDateString('vi-VN', {
-    weekday: 'long',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
+  const d = new Date(iso + "T12:00:00");
+  return d.toLocaleDateString("vi-VN", {
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
   });
 }
 
 function formatWeekRange(startIso: string, endIso: string): string {
-  const s = new Date(startIso + 'T12:00:00');
-  const e = new Date(endIso + 'T12:00:00');
-  const sStr = s.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
-  const eStr = e.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const s = new Date(startIso + "T12:00:00");
+  const e = new Date(endIso + "T12:00:00");
+  const sStr = s.toLocaleDateString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+  const eStr = e.toLocaleDateString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
   return `${sStr} – ${eStr}`;
 }
 
 function formatRelativeDate(iso: string | null): string {
-  if (!iso) return '—';
+  if (!iso) return "—";
   const d = new Date(iso);
   const now = new Date();
   const diffMs = d.getTime() - now.getTime();
@@ -114,13 +127,13 @@ function formatRelativeDate(iso: string | null): string {
   return `${formatSlotDate(iso)} · ${formatSlotTime(iso)}`;
 }
 
-type StatusFilter = 'all' | 'available' | 'booked' | 'on_leave';
+type StatusFilter = "all" | "available" | "booked" | "on_leave";
 
 const STATUS_OPTIONS: { id: StatusFilter; label: string }[] = [
-  { id: 'all', label: 'Tất cả' },
-  { id: 'available', label: 'Còn trống' },
-  { id: 'booked', label: 'Đã đặt' },
-  { id: 'on_leave', label: 'Nghỉ phép' },
+  { id: "all", label: "Tất cả" },
+  { id: "available", label: "Còn trống" },
+  { id: "booked", label: "Đã đặt" },
+  { id: "on_leave", label: "Nghỉ phép" },
 ];
 
 /** Từ hôm nay, đủ `spanDays` ngày (1 = chỉ hôm nay). */
@@ -131,30 +144,48 @@ function presetRange(spanDays: number): { from: string; to: string } {
 
 const DAY_PRESETS = [1, 2, 3, 4, 5, 6, 7, 14] as const;
 
-function leaveStatusLabel(s: ApiDoctorLeaveRequest['status']): string {
-  if (s === 'pending') return 'Chờ duyệt';
-  if (s === 'approved') return 'Đã duyệt';
-  return 'Từ chối';
+function leaveStatusLabel(s: ApiDoctorLeaveRequest["status"]): string {
+  if (s === "pending") return "Chờ duyệt";
+  if (s === "approved") return "Đã duyệt";
+  return "Từ chối";
 }
 
 function patientInitials(name: string): string {
   const p = name.trim().split(/\s+/).filter(Boolean);
-  if (p.length === 0) return '?';
+  if (p.length === 0) return "?";
   if (p.length === 1) return p[0].slice(0, 2).toUpperCase();
   return (p[0][0] + p[p.length - 1][0]).toUpperCase();
 }
 
-function appointmentStatusBadge(status: string): { label: string; className: string } {
+function appointmentStatusBadge(status: string): {
+  label: string;
+  className: string;
+} {
   const s = status.toLowerCase();
-  if (s === 'completed')
-    return { label: 'Hoàn tất', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
-  if (s === 'confirmed')
-    return { label: 'Đã xác nhận', className: 'bg-sky-50 text-sky-700 border-sky-200' };
-  if (s === 'pending')
-    return { label: 'Chờ thanh toán', className: 'bg-amber-50 text-amber-800 border-amber-200' };
-  if (s === 'cancelled')
-    return { label: 'Đã huỷ', className: 'bg-red-50 text-red-700 border-red-200' };
-  return { label: status, className: 'bg-slate-100 text-slate-700 border-slate-200' };
+  if (s === "completed")
+    return {
+      label: "Hoàn tất",
+      className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    };
+  if (s === "confirmed")
+    return {
+      label: "Đã xác nhận",
+      className: "bg-sky-50 text-sky-700 border-sky-200",
+    };
+  if (s === "pending")
+    return {
+      label: "Chờ thanh toán",
+      className: "bg-amber-50 text-amber-800 border-amber-200",
+    };
+  if (s === "cancelled")
+    return {
+      label: "Đã huỷ",
+      className: "bg-red-50 text-red-700 border-red-200",
+    };
+  return {
+    label: status,
+    className: "bg-slate-100 text-slate-700 border-slate-200",
+  };
 }
 
 function StatMini({
@@ -164,38 +195,51 @@ function StatMini({
 }: {
   label: string;
   value: number;
-  tone: 'slate' | 'emerald' | 'amber' | 'neutral';
+  tone: "slate" | "emerald" | "amber" | "neutral";
 }) {
   const tones = {
-    slate: 'bg-white/90 text-slate-900 border-slate-200/90 shadow-sm',
-    emerald: 'bg-emerald-50/95 text-emerald-900 border-emerald-200/70',
-    amber: 'bg-amber-50/95 text-amber-950 border-amber-200/70',
-    neutral: 'bg-slate-100/90 text-slate-800 border-slate-200/80',
+    slate: "bg-white/90 text-slate-900 border-slate-200/90 shadow-sm",
+    emerald: "bg-emerald-50/95 text-emerald-900 border-emerald-200/70",
+    amber: "bg-amber-50/95 text-amber-950 border-amber-200/70",
+    neutral: "bg-slate-100/90 text-slate-800 border-slate-200/80",
   };
   return (
     <div className={`rounded-xl border px-3 py-2.5 ${tones[tone]}`}>
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{label}</div>
-      <div className="text-xl font-bold tabular-nums leading-tight mt-0.5">{value}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+        {label}
+      </div>
+      <div className="text-xl font-bold tabular-nums leading-tight mt-0.5">
+        {value}
+      </div>
     </div>
   );
 }
 
 const inputBase =
-  'w-full px-3 py-2 text-sm border border-slate-200/90 rounded-xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-shadow';
+  "w-full px-3 py-2 text-sm border border-slate-200/90 rounded-xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-shadow";
 
-type DoctorTab = 'overview' | 'slots' | 'appointments' | 'patients' | 'stats' | 'ai';
-type CalendarView = 'day' | 'week';
+type DoctorTab =
+  | "overview"
+  | "slots"
+  | "appointments"
+  | "patients"
+  | "stats"
+  | "ai";
+type CalendarView = "day" | "week";
 
-type StatsRangePreset = '7d' | '30d' | '90d' | 'custom';
+type StatsRangePreset = "7d" | "30d" | "90d" | "custom";
 
 function isoDateOnlyLocal(d: Date): string {
   const tz = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
   return tz.toISOString().slice(0, 10);
 }
 
-function statsPresetRange(preset: Exclude<StatsRangePreset, 'custom'>): { from: string; to: string } {
+function statsPresetRange(preset: Exclude<StatsRangePreset, "custom">): {
+  from: string;
+  to: string;
+} {
   const today = isoDateOnlyLocal(new Date());
-  const days = preset === '7d' ? 7 : preset === '30d' ? 30 : 90;
+  const days = preset === "7d" ? 7 : preset === "30d" ? 30 : 90;
   const fromD = new Date();
   fromD.setDate(fromD.getDate() - (days - 1));
   return { from: isoDateOnlyLocal(fromD), to: today };
@@ -203,7 +247,7 @@ function statsPresetRange(preset: Exclude<StatsRangePreset, 'custom'>): { from: 
 
 export const DashboardDoctor: React.FC = () => {
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState<DoctorTab>('overview');
+  const [activeTab, setActiveTab] = useState<DoctorTab>("overview");
 
   // ============ Slot state (Tab Lịch ca) ============
   const [slots, setSlots] = useState<ApiAppointmentSlot[]>([]);
@@ -211,55 +255,70 @@ export const DashboardDoctor: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [fromDate, setFromDate] = useState(() => todayIso());
   const [toDate, setToDate] = useState(() => presetRange(7).to);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   // ============ Leave state (Tab Tổng quan) ============
-  const [leaveRequests, setLeaveRequests] = useState<ApiDoctorLeaveRequest[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<ApiDoctorLeaveRequest[]>(
+    [],
+  );
   const [leaveLoading, setLeaveLoading] = useState(true);
-  const [leaveStart, setLeaveStart] = useState(() => firstWeekdayOnOrAfter(todayIso(), addDaysIso));
+  const [leaveStart, setLeaveStart] = useState(() =>
+    firstWeekdayOnOrAfter(todayIso(), addDaysIso),
+  );
   const [leaveEnd, setLeaveEnd] = useState(() => {
     const s = firstWeekdayOnOrAfter(todayIso(), addDaysIso);
     let e = addDaysIso(s, 2);
     while (isWeekendIsoDate(e)) e = addDaysIso(e, 1);
     return e;
   });
-  const [leaveReason, setLeaveReason] = useState('');
+  const [leaveReason, setLeaveReason] = useState("");
   const [leaveSubmitting, setLeaveSubmitting] = useState(false);
 
   // ============ Pending medical / records (Tab Tổng quan) ============
-  const [pendingMedical, setPendingMedical] = useState<ApiDoctorPendingMedicalAppointment[]>([]);
+  const [pendingMedical, setPendingMedical] = useState<
+    ApiDoctorPendingMedicalAppointment[]
+  >([]);
   const [pendingMedicalLoading, setPendingMedicalLoading] = useState(true);
-  const [mrModalAppt, setMrModalAppt] = useState<ApiDoctorPendingMedicalAppointment | null>(null);
-  const [mrSymptoms, setMrSymptoms] = useState('');
-  const [mrDiagnosis, setMrDiagnosis] = useState('');
-  const [mrTreatment, setMrTreatment] = useState('');
-  const [mrNotes, setMrNotes] = useState('');
+  const [mrModalAppt, setMrModalAppt] =
+    useState<ApiDoctorPendingMedicalAppointment | null>(null);
+  const [mrSymptoms, setMrSymptoms] = useState("");
+  const [mrDiagnosis, setMrDiagnosis] = useState("");
+  const [mrTreatment, setMrTreatment] = useState("");
+  const [mrNotes, setMrNotes] = useState("");
   const [mrSubmitting, setMrSubmitting] = useState(false);
 
-  const [myRecords, setMyRecords] = useState<ApiDoctorMedicalRecordListItem[]>([]);
+  const [myRecords, setMyRecords] = useState<ApiDoctorMedicalRecordListItem[]>(
+    [],
+  );
   const [myRecordsLoading, setMyRecordsLoading] = useState(true);
-  const [editRecord, setEditRecord] = useState<ApiDoctorMedicalRecordListItem | null>(null);
-  const [erSymptoms, setErSymptoms] = useState('');
-  const [erDiagnosis, setErDiagnosis] = useState('');
-  const [erTreatment, setErTreatment] = useState('');
-  const [erNotes, setErNotes] = useState('');
+  const [editRecord, setEditRecord] =
+    useState<ApiDoctorMedicalRecordListItem | null>(null);
+  const [erSymptoms, setErSymptoms] = useState("");
+  const [erDiagnosis, setErDiagnosis] = useState("");
+  const [erTreatment, setErTreatment] = useState("");
+  const [erNotes, setErNotes] = useState("");
+  const [erReason, setErReason] = useState("");
   const [erSubmitting, setErSubmitting] = useState(false);
 
   // ============ Patients tab ============
   const [patients, setPatients] = useState<ApiDoctorPatient[]>([]);
   const [patientsLoading, setPatientsLoading] = useState(true);
-  const [patientSearch, setPatientSearch] = useState('');
+  const [patientSearch, setPatientSearch] = useState("");
 
   // ============ Appointments calendar tab ============
-  const [calendarView, setCalendarView] = useState<CalendarView>('day');
+  const [calendarView, setCalendarView] = useState<CalendarView>("day");
   const [anchorDate, setAnchorDate] = useState<string>(() => todayIso());
   const [appointments, setAppointments] = useState<ApiDoctorAppointment[]>([]);
   const [appointmentsLoading, setAppointmentsLoading] = useState(false);
 
   // ============ Stats tab ============
-  const [statsPreset, setStatsPreset] = useState<StatsRangePreset>('30d');
-  const [statsFrom, setStatsFrom] = useState<string>(() => statsPresetRange('30d').from);
-  const [statsTo, setStatsTo] = useState<string>(() => statsPresetRange('30d').to);
+  const [statsPreset, setStatsPreset] = useState<StatsRangePreset>("30d");
+  const [statsFrom, setStatsFrom] = useState<string>(
+    () => statsPresetRange("30d").from,
+  );
+  const [statsTo, setStatsTo] = useState<string>(
+    () => statsPresetRange("30d").to,
+  );
   const [recordStats, setRecordStats] = useState<ApiDoctorStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
 
@@ -270,7 +329,7 @@ export const DashboardDoctor: React.FC = () => {
       .getMySlots(fromDate)
       .then(setSlots)
       .catch((e) => {
-        setError(e instanceof Error ? e.message : 'Không tải được lịch');
+        setError(e instanceof Error ? e.message : "Không tải được lịch");
         setSlots([]);
       })
       .finally(() => setLoading(false));
@@ -315,26 +374,31 @@ export const DashboardDoctor: React.FC = () => {
   // ============ Modal handlers ============
   const openMedicalRecordModal = (a: ApiDoctorPendingMedicalAppointment) => {
     setMrModalAppt(a);
-    setMrSymptoms(a.appointmentSymptoms?.trim() ?? '');
-    setMrDiagnosis('');
-    setMrTreatment('');
-    setMrNotes('');
+    setMrSymptoms(a.appointmentSymptoms?.trim() ?? "");
+    setMrDiagnosis("");
+    setMrTreatment("");
+    setMrNotes("");
   };
 
   const closeMedicalRecordModal = () => {
     setMrModalAppt(null);
-    setMrSymptoms('');
-    setMrDiagnosis('');
-    setMrTreatment('');
-    setMrNotes('');
+    setMrSymptoms("");
+    setMrDiagnosis("");
+    setMrTreatment("");
+    setMrNotes("");
   };
 
   const submitMedicalRecord = async () => {
     if (!mrModalAppt) return;
     const hasContent =
-      mrSymptoms.trim() || mrDiagnosis.trim() || mrTreatment.trim() || mrNotes.trim();
+      mrSymptoms.trim() ||
+      mrDiagnosis.trim() ||
+      mrTreatment.trim() ||
+      mrNotes.trim();
     if (!hasContent) {
-      toast.error('Nhập ít nhất một trong: triệu chứng, chẩn đoán, điều trị hoặc ghi chú.');
+      toast.error(
+        "Nhập ít nhất một trong: triệu chứng, chẩn đoán, điều trị hoặc ghi chú.",
+      );
       return;
     }
     setMrSubmitting(true);
@@ -348,15 +412,15 @@ export const DashboardDoctor: React.FC = () => {
       });
       toast.success(
         res.embeddingStored
-          ? 'Đã lưu hồ sơ và vector cho RAG.'
-          : 'Đã lưu hồ sơ. (Embedding: cần pgvector + OPENAI_API_KEY trên server.)',
+          ? "Đã lưu hồ sơ và vector cho RAG."
+          : "Đã lưu hồ sơ. (Embedding: cần pgvector + OPENAI_API_KEY trên server.)",
       );
       closeMedicalRecordModal();
       loadPendingMedical();
       loadMyRecords();
       loadSlots();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Không lưu được hồ sơ');
+      toast.error(e instanceof Error ? e.message : "Không lưu được hồ sơ");
     } finally {
       setMrSubmitting(false);
     }
@@ -364,43 +428,57 @@ export const DashboardDoctor: React.FC = () => {
 
   const openEditRecordModal = (r: ApiDoctorMedicalRecordListItem) => {
     setEditRecord(r);
-    setErSymptoms(r.symptoms?.trim() ?? '');
-    setErDiagnosis(r.diagnosis?.trim() ?? '');
-    setErTreatment(r.treatment?.trim() ?? '');
-    setErNotes(r.notes?.trim() ?? '');
+    setErSymptoms(r.symptoms?.trim() ?? "");
+    setErDiagnosis(r.diagnosis?.trim() ?? "");
+    setErTreatment(r.treatment?.trim() ?? "");
+    setErNotes(r.notes?.trim() ?? "");
   };
 
   const closeEditRecordModal = () => {
     setEditRecord(null);
-    setErSymptoms('');
-    setErDiagnosis('');
-    setErTreatment('');
-    setErNotes('');
+    setErSymptoms("");
+    setErDiagnosis("");
+    setErTreatment("");
+    setErNotes("");
+    setErReason("");
   };
 
   const submitEditRecord = async () => {
     if (!editRecord) return;
+    if (!erReason.trim()) {
+      toast.error("Nhập lý do chỉnh sửa để lưu lịch sử hồ sơ.");
+      return;
+    }
     const hasContent =
-      erSymptoms.trim() || erDiagnosis.trim() || erTreatment.trim() || erNotes.trim();
+      erSymptoms.trim() ||
+      erDiagnosis.trim() ||
+      erTreatment.trim() ||
+      erNotes.trim();
     if (!hasContent) {
-      toast.error('Nhập ít nhất một trong: triệu chứng, chẩn đoán, điều trị hoặc ghi chú.');
+      toast.error(
+        "Nhập ít nhất một trong: triệu chứng, chẩn đoán, điều trị hoặc ghi chú.",
+      );
       return;
     }
     setErSubmitting(true);
     try {
       const res = await api.updateDoctorMedicalRecord(editRecord.id, {
+        version: editRecord.version,
+        reason: erReason.trim(),
         symptoms: erSymptoms.trim() || null,
         diagnosis: erDiagnosis.trim() || null,
         treatment: erTreatment.trim() || null,
         notes: erNotes.trim() || null,
       });
       toast.success(
-        res.embeddingStored ? 'Đã cập nhật hồ sơ và embedding.' : 'Đã cập nhật hồ sơ.',
+        res.embeddingStored
+          ? "Đã cập nhật hồ sơ và embedding."
+          : "Đã cập nhật hồ sơ.",
       );
       closeEditRecordModal();
       loadMyRecords();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Không cập nhật được');
+      toast.error(e instanceof Error ? e.message : "Không cập nhật được");
     } finally {
       setErSubmitting(false);
     }
@@ -420,10 +498,10 @@ export const DashboardDoctor: React.FC = () => {
 
   // Load appointments khi vào tab Lịch hẹn hoặc đổi view/date
   useEffect(() => {
-    if (activeTab !== 'appointments') return;
+    if (activeTab !== "appointments") return;
     let from: string;
     let to: string;
-    if (calendarView === 'day') {
+    if (calendarView === "day") {
       from = anchorDate;
       to = anchorDate;
     } else {
@@ -439,7 +517,7 @@ export const DashboardDoctor: React.FC = () => {
   }, [activeTab, calendarView, anchorDate]);
 
   useEffect(() => {
-    if (activeTab !== 'stats') return;
+    if (activeTab !== "stats") return;
     setStatsLoading(true);
     api
       .getMyDoctorStats(statsFrom, statsTo)
@@ -448,7 +526,7 @@ export const DashboardDoctor: React.FC = () => {
       .finally(() => setStatsLoading(false));
   }, [activeTab, statsFrom, statsTo]);
 
-  const applyStatsPreset = (p: Exclude<StatsRangePreset, 'custom'>) => {
+  const applyStatsPreset = (p: Exclude<StatsRangePreset, "custom">) => {
     const r = statsPresetRange(p);
     setStatsPreset(p);
     setStatsFrom(r.from);
@@ -456,7 +534,7 @@ export const DashboardDoctor: React.FC = () => {
   };
 
   const setStatsCustom = (next: { from?: string; to?: string }) => {
-    setStatsPreset('custom');
+    setStatsPreset("custom");
     if (next.from !== undefined) setStatsFrom(next.from);
     if (next.to !== undefined) setStatsTo(next.to);
   };
@@ -467,18 +545,21 @@ export const DashboardDoctor: React.FC = () => {
       const dStr = s.slotTime.slice(0, 10);
       if (dStr < fromDate) return false;
       if (toDate && dStr > toDate) return false;
-      if (statusFilter === 'available' && s.status !== 'available') return false;
-      if (statusFilter === 'booked' && s.status !== 'booked') return false;
-      if (statusFilter === 'on_leave' && s.status !== 'on_leave') return false;
+      if (statusFilter === "available" && s.status !== "available")
+        return false;
+      if (statusFilter === "booked" && s.status !== "booked") return false;
+      if (statusFilter === "on_leave" && s.status !== "on_leave") return false;
       return true;
     });
-    return list.sort((a, b) => new Date(a.slotTime).getTime() - new Date(b.slotTime).getTime());
+    return list.sort(
+      (a, b) => new Date(a.slotTime).getTime() - new Date(b.slotTime).getTime(),
+    );
   }, [slots, fromDate, toDate, statusFilter]);
 
   const stats = useMemo(() => {
-    const free = filteredSlots.filter((s) => s.status === 'available').length;
-    const booked = filteredSlots.filter((s) => s.status === 'booked').length;
-    const onLeave = filteredSlots.filter((s) => s.status === 'on_leave').length;
+    const free = filteredSlots.filter((s) => s.status === "available").length;
+    const booked = filteredSlots.filter((s) => s.status === "booked").length;
+    const onLeave = filteredSlots.filter((s) => s.status === "on_leave").length;
     return { free, booked, onLeave, total: filteredSlots.length };
   }, [filteredSlots]);
 
@@ -486,7 +567,7 @@ export const DashboardDoctor: React.FC = () => {
     const q = patientSearch.trim().toLowerCase();
     if (!q) return patients;
     return patients.filter((p) =>
-      `${p.fullName} ${p.email} ${p.phone ?? ''}`.toLowerCase().includes(q),
+      `${p.fullName} ${p.email} ${p.phone ?? ""}`.toLowerCase().includes(q),
     );
   }, [patients, patientSearch]);
 
@@ -508,16 +589,18 @@ export const DashboardDoctor: React.FC = () => {
 
   const submitLeaveRequest = async () => {
     if (leaveStart > leaveEnd) {
-      toast.error('Ngày bắt đầu không được sau ngày kết thúc.');
+      toast.error("Ngày bắt đầu không được sau ngày kết thúc.");
       return;
     }
     if (isWeekendIsoDate(leaveStart) || isWeekendIsoDate(leaveEnd)) {
-      toast.error('Chỉ chọn thứ 2 – thứ 6 cho ngày bắt đầu và kết thúc (không chọn thứ 7 hoặc chủ nhật).');
+      toast.error(
+        "Chỉ chọn thứ 2 – thứ 6 cho ngày bắt đầu và kết thúc (không chọn thứ 7 hoặc chủ nhật).",
+      );
       return;
     }
     const wd = listWeekdayIsoDatesInRange(leaveStart, leaveEnd);
     if (wd.length === 0) {
-      toast.error('Khoảng đã chọn không có ngày làm việc nào.');
+      toast.error("Khoảng đã chọn không có ngày làm việc nào.");
       return;
     }
     setLeaveSubmitting(true);
@@ -527,11 +610,11 @@ export const DashboardDoctor: React.FC = () => {
         endDate: leaveEnd,
         reason: leaveReason.trim() || null,
       });
-      toast.success('Đã gửi đơn xin nghỉ. Quản trị sẽ xem xét.');
-      setLeaveReason('');
+      toast.success("Đã gửi đơn xin nghỉ. Quản trị sẽ xem xét.");
+      setLeaveReason("");
       loadLeaveRequests();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Không gửi được đơn');
+      toast.error(e instanceof Error ? e.message : "Không gửi được đơn");
     } finally {
       setLeaveSubmitting(false);
     }
@@ -550,13 +633,15 @@ export const DashboardDoctor: React.FC = () => {
                 Bảng điều khiển bác sĩ
               </h1>
               <p className="mt-1 text-sm text-slate-600 max-w-xl">
-                Quản lý hồ sơ sau ca, lịch ca, lịch hẹn ngày/tuần và danh sách bệnh nhân của bạn — tất cả trong một
-                chỗ.
+                Quản lý hồ sơ sau ca, lịch ca, lịch hẹn ngày/tuần và danh sách
+                bệnh nhân của bạn — tất cả trong một chỗ.
               </p>
             </div>
             {!pendingMedicalLoading && pendingCount > 0 ? (
               <div className="flex items-center gap-2 rounded-2xl bg-amber-50 border border-amber-200/80 px-4 py-2 text-sm text-amber-950 shadow-sm">
-                <span className="font-semibold tabular-nums text-lg">{pendingCount}</span>
+                <span className="font-semibold tabular-nums text-lg">
+                  {pendingCount}
+                </span>
                 <span className="text-amber-900/90">ca chờ nhập hồ sơ</span>
               </div>
             ) : null}
@@ -571,50 +656,54 @@ export const DashboardDoctor: React.FC = () => {
 
         <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="border-b border-slate-100 bg-slate-50/40 px-2 sm:px-4">
-            <nav className="flex gap-1 overflow-x-auto -mb-px" role="tablist" aria-label="Khu vực dashboard">
+            <nav
+              className="flex gap-1 overflow-x-auto -mb-px"
+              role="tablist"
+              aria-label="Khu vực dashboard"
+            >
               <DocTabButton
                 icon={LayoutList}
                 label="Tổng quan"
                 badge={pendingCount}
-                active={activeTab === 'overview'}
-                onClick={() => setActiveTab('overview')}
+                active={activeTab === "overview"}
+                onClick={() => setActiveTab("overview")}
               />
               <DocTabButton
                 icon={CalendarDays}
                 label="Lịch ca"
-                active={activeTab === 'slots'}
-                onClick={() => setActiveTab('slots')}
+                active={activeTab === "slots"}
+                onClick={() => setActiveTab("slots")}
               />
               <DocTabButton
                 icon={CalendarClock}
                 label="Lịch hẹn"
-                active={activeTab === 'appointments'}
-                onClick={() => setActiveTab('appointments')}
+                active={activeTab === "appointments"}
+                onClick={() => setActiveTab("appointments")}
               />
               <DocTabButton
                 icon={Users}
                 label="Bệnh nhân"
                 badge={patients.length}
-                active={activeTab === 'patients'}
-                onClick={() => setActiveTab('patients')}
+                active={activeTab === "patients"}
+                onClick={() => setActiveTab("patients")}
               />
               <DocTabButton
                 icon={BarChart3}
                 label="Thống kê"
-                active={activeTab === 'stats'}
-                onClick={() => setActiveTab('stats')}
+                active={activeTab === "stats"}
+                onClick={() => setActiveTab("stats")}
               />
               <DocTabButton
                 icon={Sparkles}
                 label="Trợ lý AI"
-                active={activeTab === 'ai'}
-                onClick={() => setActiveTab('ai')}
+                active={activeTab === "ai"}
+                onClick={() => setActiveTab("ai")}
               />
             </nav>
           </div>
 
           <div className="p-4 sm:p-6">
-            {activeTab === 'overview' && (
+            {activeTab === "overview" && (
               <OverviewTab
                 pendingMedical={pendingMedical}
                 pendingMedicalLoading={pendingMedicalLoading}
@@ -635,7 +724,7 @@ export const DashboardDoctor: React.FC = () => {
               />
             )}
 
-            {activeTab === 'slots' && (
+            {activeTab === "slots" && (
               <SlotsTab
                 slots={slots}
                 filteredSlots={filteredSlots}
@@ -652,7 +741,7 @@ export const DashboardDoctor: React.FC = () => {
               />
             )}
 
-            {activeTab === 'appointments' && (
+            {activeTab === "appointments" && (
               <AppointmentsTab
                 appointments={appointments}
                 loading={appointmentsLoading}
@@ -664,7 +753,7 @@ export const DashboardDoctor: React.FC = () => {
               />
             )}
 
-            {activeTab === 'patients' && (
+            {activeTab === "patients" && (
               <PatientsTab
                 patients={filteredPatients}
                 totalCount={patients.length}
@@ -674,7 +763,7 @@ export const DashboardDoctor: React.FC = () => {
               />
             )}
 
-            {activeTab === 'stats' && (
+            {activeTab === "stats" && (
               <StatsTab
                 stats={recordStats}
                 loading={statsLoading}
@@ -686,7 +775,7 @@ export const DashboardDoctor: React.FC = () => {
               />
             )}
 
-            {activeTab === 'ai' && <DoctorAiAssistantTab />}
+            {activeTab === "ai" && <DoctorAiAssistantTab />}
           </div>
         </div>
       </div>
@@ -700,24 +789,35 @@ export const DashboardDoctor: React.FC = () => {
             aria-modal="true"
             aria-labelledby="mr-modal-title"
           >
-            <ModalCloseButton onClose={closeMedicalRecordModal} disabled={mrSubmitting} />
+            <ModalCloseButton
+              onClose={closeMedicalRecordModal}
+              disabled={mrSubmitting}
+            />
             <div className="flex items-start gap-3 mb-4">
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary font-bold text-sm">
                 {patientInitials(mrModalAppt.patientName)}
               </span>
               <div className="min-w-0">
-                <h3 id="mr-modal-title" className="text-lg font-bold text-slate-900">
+                <h3
+                  id="mr-modal-title"
+                  className="text-lg font-bold text-slate-900"
+                >
                   Nhập hồ sơ khám
                 </h3>
-                <p className="text-sm text-slate-600 mt-0.5">{mrModalAppt.patientName}</p>
+                <p className="text-sm text-slate-600 mt-0.5">
+                  {mrModalAppt.patientName}
+                </p>
                 <p className="text-xs text-slate-500 mt-1">
-                  {formatSlotDate(mrModalAppt.slotTime)} · {formatSlotTime(mrModalAppt.slotTime)}
+                  {formatSlotDate(mrModalAppt.slotTime)} ·{" "}
+                  {formatSlotTime(mrModalAppt.slotTime)}
                 </p>
               </div>
             </div>
             <div className="space-y-3">
               <label className="block">
-                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Triệu chứng</span>
+                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  Triệu chứng
+                </span>
                 <textarea
                   value={mrSymptoms}
                   onChange={(e) => setMrSymptoms(e.target.value)}
@@ -727,7 +827,9 @@ export const DashboardDoctor: React.FC = () => {
                 />
               </label>
               <label className="block">
-                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Chẩn đoán</span>
+                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  Chẩn đoán
+                </span>
                 <textarea
                   value={mrDiagnosis}
                   onChange={(e) => setMrDiagnosis(e.target.value)}
@@ -736,7 +838,9 @@ export const DashboardDoctor: React.FC = () => {
                 />
               </label>
               <label className="block">
-                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Điều trị</span>
+                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  Điều trị
+                </span>
                 <textarea
                   value={mrTreatment}
                   onChange={(e) => setMrTreatment(e.target.value)}
@@ -745,7 +849,9 @@ export const DashboardDoctor: React.FC = () => {
                 />
               </label>
               <label className="block">
-                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Ghi chú</span>
+                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  Ghi chú
+                </span>
                 <textarea
                   value={mrNotes}
                   onChange={(e) => setMrNotes(e.target.value)}
@@ -769,7 +875,9 @@ export const DashboardDoctor: React.FC = () => {
                 disabled={mrSubmitting}
                 className="flex-1 py-2.5 bg-primary text-white rounded-xl font-bold disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm hover:bg-primary/90"
               >
-                {mrSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {mrSubmitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : null}
                 Lưu hồ sơ
               </button>
             </div>
@@ -785,19 +893,27 @@ export const DashboardDoctor: React.FC = () => {
             aria-modal="true"
             aria-labelledby="er-modal-title"
           >
-            <ModalCloseButton onClose={closeEditRecordModal} disabled={erSubmitting} />
-            <h3 id="er-modal-title" className="text-lg font-bold text-slate-900 mb-1 pr-2">
+            <ModalCloseButton
+              onClose={closeEditRecordModal}
+              disabled={erSubmitting}
+            />
+            <h3
+              id="er-modal-title"
+              className="text-lg font-bold text-slate-900 mb-1 pr-2"
+            >
               Sửa hồ sơ khám
             </h3>
             <p className="text-sm text-slate-600 mb-4">
-              {editRecord.patientName} ·{' '}
+              {editRecord.patientName} ·{" "}
               {editRecord.slotTime
                 ? `${formatSlotDate(editRecord.slotTime)} · ${formatSlotTime(editRecord.slotTime)}`
-                : new Date(editRecord.createdAt).toLocaleString('vi-VN')}
+                : new Date(editRecord.createdAt).toLocaleString("vi-VN")}
             </p>
             <div className="space-y-3">
               <label className="block">
-                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Triệu chứng</span>
+                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  Triệu chứng
+                </span>
                 <textarea
                   value={erSymptoms}
                   onChange={(e) => setErSymptoms(e.target.value)}
@@ -806,7 +922,9 @@ export const DashboardDoctor: React.FC = () => {
                 />
               </label>
               <label className="block">
-                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Chẩn đoán</span>
+                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  Chẩn đoán
+                </span>
                 <textarea
                   value={erDiagnosis}
                   onChange={(e) => setErDiagnosis(e.target.value)}
@@ -815,7 +933,9 @@ export const DashboardDoctor: React.FC = () => {
                 />
               </label>
               <label className="block">
-                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Điều trị</span>
+                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  Điều trị
+                </span>
                 <textarea
                   value={erTreatment}
                   onChange={(e) => setErTreatment(e.target.value)}
@@ -824,7 +944,9 @@ export const DashboardDoctor: React.FC = () => {
                 />
               </label>
               <label className="block">
-                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Ghi chú</span>
+                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  Ghi chú
+                </span>
                 <textarea
                   value={erNotes}
                   onChange={(e) => setErNotes(e.target.value)}
@@ -833,6 +955,17 @@ export const DashboardDoctor: React.FC = () => {
                 />
               </label>
             </div>
+            <label className="block mt-4 text-sm">
+              Lý do chỉnh sửa
+              <input
+                className="block border rounded-lg p-2 w-full"
+                value={erReason}
+                maxLength={1000}
+                onChange={(e) => setErReason(e.target.value)}
+                required
+              />
+            </label>
+            <MedicalRecordHistory recordId={editRecord.id} />
             <div className="flex flex-col-reverse sm:flex-row gap-2 mt-6">
               <button
                 type="button"
@@ -848,14 +981,15 @@ export const DashboardDoctor: React.FC = () => {
                 disabled={erSubmitting}
                 className="flex-1 py-2.5 bg-primary text-white rounded-xl font-bold disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {erSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {erSubmitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : null}
                 Lưu thay đổi
               </button>
             </div>
           </div>
         </ModalOverlay>
       )}
-
     </div>
   );
 };
@@ -872,7 +1006,13 @@ interface DocTabButtonProps {
   onClick: () => void;
 }
 
-const DocTabButton: React.FC<DocTabButtonProps> = ({ icon: Icon, label, badge, active, onClick }) => (
+const DocTabButton: React.FC<DocTabButtonProps> = ({
+  icon: Icon,
+  label,
+  badge,
+  active,
+  onClick,
+}) => (
   <button
     type="button"
     role="tab"
@@ -880,8 +1020,8 @@ const DocTabButton: React.FC<DocTabButtonProps> = ({ icon: Icon, label, badge, a
     onClick={onClick}
     className={`relative inline-flex items-center gap-2 px-4 sm:px-5 py-3 text-sm font-semibold whitespace-nowrap transition-colors border-b-2 ${
       active
-        ? 'text-primary border-primary'
-        : 'text-slate-500 hover:text-slate-700 border-transparent hover:border-slate-200'
+        ? "text-primary border-primary"
+        : "text-slate-500 hover:text-slate-700 border-transparent hover:border-slate-200"
     }`}
   >
     <Icon className="w-4 h-4" />
@@ -889,7 +1029,7 @@ const DocTabButton: React.FC<DocTabButtonProps> = ({ icon: Icon, label, badge, a
     {badge != null && badge > 0 && (
       <span
         className={`min-w-[1.25rem] h-5 px-1.5 inline-flex items-center justify-center text-[11px] font-bold rounded-full tabular-nums ${
-          active ? 'bg-primary/15 text-primary' : 'bg-slate-200 text-slate-600'
+          active ? "bg-primary/15 text-primary" : "bg-slate-200 text-slate-600"
         }`}
       >
         {badge}
@@ -936,8 +1076,8 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
   onSetLeaveReason,
   onSubmitLeave,
 }) => {
-  const [pendingSearch, setPendingSearch] = useState('');
-  const [recordsSearch, setRecordsSearch] = useState('');
+  const [pendingSearch, setPendingSearch] = useState("");
+  const [recordsSearch, setRecordsSearch] = useState("");
 
   const filteredPending = useMemo(() => {
     const q = pendingSearch.trim().toLowerCase();
@@ -955,8 +1095,16 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
     );
   }, [myRecords, recordsSearch]);
 
-  const pendingPage = usePagination(filteredPending, PAGE_SIZE.overview, pendingSearch);
-  const recordsPage = usePagination(filteredRecords, PAGE_SIZE.overview, recordsSearch);
+  const pendingPage = usePagination(
+    filteredPending,
+    PAGE_SIZE.overview,
+    pendingSearch,
+  );
+  const recordsPage = usePagination(
+    filteredRecords,
+    PAGE_SIZE.overview,
+    recordsSearch,
+  );
   const leavePage = usePagination(leaveRequests, PAGE_SIZE.overview);
 
   return (
@@ -968,8 +1116,12 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
             <FileText className="w-5 h-5" />
           </span>
           <div className="flex-1 min-w-0">
-            <h2 className="text-base font-bold text-slate-900">Hồ sơ sau ca khám</h2>
-            <p className="text-xs text-slate-500">Đã qua giờ ca · đã cọc/xác nhận · chưa có hồ sơ</p>
+            <h2 className="text-base font-bold text-slate-900">
+              Hồ sơ sau ca khám
+            </h2>
+            <p className="text-xs text-slate-500">
+              Đã qua giờ ca · đã cọc/xác nhận · chưa có hồ sơ
+            </p>
           </div>
           {pendingMedical.length > 0 && (
             <div className="relative shrink-0 w-44 sm:w-52">
@@ -992,55 +1144,72 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
           ) : pendingMedical.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center">
               <UserRound className="w-10 h-10 mx-auto text-slate-300 mb-2" />
-              <p className="text-sm font-medium text-slate-700">Không có ca chờ nhập hồ sơ</p>
-              <p className="text-xs text-slate-500 mt-1">Khi có lịch đủ điều kiện, sẽ hiện tại đây.</p>
+              <p className="text-sm font-medium text-slate-700">
+                Không có ca chờ nhập hồ sơ
+              </p>
+              <p className="text-xs text-slate-500 mt-1">
+                Khi có lịch đủ điều kiện, sẽ hiện tại đây.
+              </p>
             </div>
           ) : filteredPending.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center">
-              <p className="text-sm font-medium text-slate-700">Không tìm thấy bệnh nhân nào khớp</p>
-              <button type="button" onClick={() => setPendingSearch('')} className="mt-2 text-xs text-primary hover:underline">Xoá tìm kiếm</button>
+              <p className="text-sm font-medium text-slate-700">
+                Không tìm thấy bệnh nhân nào khớp
+              </p>
+              <button
+                type="button"
+                onClick={() => setPendingSearch("")}
+                className="mt-2 text-xs text-primary hover:underline"
+              >
+                Xoá tìm kiếm
+              </button>
             </div>
           ) : (
             <div className="min-h-0 max-h-[min(70vh,40rem)] overflow-y-auto overscroll-y-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]">
-            <ul className="space-y-3">
-              {pendingPage.paginatedItems.map((a) => (
-                <li
-                  key={a.id}
-                  className="group flex flex-wrap items-center gap-3 rounded-xl border border-amber-200/60 bg-gradient-to-br from-amber-50/50 to-white p-4 shadow-sm hover:border-amber-300/80 hover:shadow transition-all"
-                >
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white border border-amber-100 text-sm font-bold text-amber-900 shadow-sm">
-                    {patientInitials(a.patientName)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="font-semibold text-slate-900">{a.patientName}</div>
-                    <div className="text-xs text-slate-500 truncate">{a.patientEmail}</div>
-                    <div className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-slate-600 bg-white/80 border border-slate-100 rounded-lg px-2 py-0.5">
-                      <Clock className="w-3.5 h-3.5 text-slate-400" />
-                      {formatSlotDate(a.slotTime)} · {formatSlotTime(a.slotTime)}
+              <ul className="space-y-3">
+                {pendingPage.paginatedItems.map((a) => (
+                  <li
+                    key={a.id}
+                    className="group flex flex-wrap items-center gap-3 rounded-xl border border-amber-200/60 bg-gradient-to-br from-amber-50/50 to-white p-4 shadow-sm hover:border-amber-300/80 hover:shadow transition-all"
+                  >
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white border border-amber-100 text-sm font-bold text-amber-900 shadow-sm">
+                      {patientInitials(a.patientName)}
                     </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-end">
-                    <button
-                      type="button"
-                      onClick={() => onOpenMedicalRecord(a)}
-                      className="shrink-0 inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold shadow-sm hover:bg-primary/90 active:scale-[0.98] transition-transform"
-                    >
-                      Nhập hồ sơ
-                      <ChevronRight className="w-4 h-4 opacity-90" />
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <ListPagination
-              page={pendingPage.page}
-              totalPages={pendingPage.totalPages}
-              totalItems={pendingPage.totalItems}
-              pageSize={pendingPage.pageSize}
-              onPageChange={pendingPage.goToPage}
-              itemLabel="ca chờ"
-              className="pt-3 border-t border-slate-100 mt-3"
-            />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-slate-900">
+                        {a.patientName}
+                      </div>
+                      <div className="text-xs text-slate-500 truncate">
+                        {a.patientEmail}
+                      </div>
+                      <div className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-slate-600 bg-white/80 border border-slate-100 rounded-lg px-2 py-0.5">
+                        <Clock className="w-3.5 h-3.5 text-slate-400" />
+                        {formatSlotDate(a.slotTime)} ·{" "}
+                        {formatSlotTime(a.slotTime)}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-end">
+                      <button
+                        type="button"
+                        onClick={() => onOpenMedicalRecord(a)}
+                        className="shrink-0 inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold shadow-sm hover:bg-primary/90 active:scale-[0.98] transition-transform"
+                      >
+                        Nhập hồ sơ
+                        <ChevronRight className="w-4 h-4 opacity-90" />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <ListPagination
+                page={pendingPage.page}
+                totalPages={pendingPage.totalPages}
+                totalItems={pendingPage.totalItems}
+                pageSize={pendingPage.pageSize}
+                onPageChange={pendingPage.goToPage}
+                itemLabel="ca chờ"
+                className="pt-3 border-t border-slate-100 mt-3"
+              />
             </div>
           )}
         </div>
@@ -1054,7 +1223,9 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
           </span>
           <div className="flex-1 min-w-0">
             <h2 className="text-base font-bold text-slate-900">Hồ sơ đã lưu</h2>
-            <p className="text-xs text-slate-500">Cập nhật nội dung khám (triệu chứng, chẩn đoán, điều trị)</p>
+            <p className="text-xs text-slate-500">
+              Cập nhật nội dung khám (triệu chứng, chẩn đoán, điều trị)
+            </p>
           </div>
           {myRecords.length > 0 && (
             <div className="relative shrink-0 w-44 sm:w-52">
@@ -1076,62 +1247,81 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
             </div>
           ) : myRecords.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center text-sm text-slate-600">
-              Chưa có hồ sơ nào. Sau khi nhập hồ sơ sau ca, danh sách sẽ hiện tại đây.
+              Chưa có hồ sơ nào. Sau khi nhập hồ sơ sau ca, danh sách sẽ hiện
+              tại đây.
             </div>
           ) : filteredRecords.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center">
-              <p className="text-sm font-medium text-slate-700">Không tìm thấy hồ sơ nào khớp</p>
-              <button type="button" onClick={() => setRecordsSearch('')} className="mt-2 text-xs text-primary hover:underline">Xoá tìm kiếm</button>
+              <p className="text-sm font-medium text-slate-700">
+                Không tìm thấy hồ sơ nào khớp
+              </p>
+              <button
+                type="button"
+                onClick={() => setRecordsSearch("")}
+                className="mt-2 text-xs text-primary hover:underline"
+              >
+                Xoá tìm kiếm
+              </button>
             </div>
           ) : (
             <div className="min-h-0 max-h-[min(70vh,40rem)] overflow-y-auto overscroll-y-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]">
-            <ul className="space-y-3">
-              {recordsPage.paginatedItems.map((r) => {
-                const when = r.slotTime
-                  ? `${formatSlotDate(r.slotTime)} · ${formatSlotTime(r.slotTime)}`
-                  : new Date(r.createdAt).toLocaleString('vi-VN', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    });
-                const preview =
-                  [r.symptoms, r.diagnosis].filter(Boolean).join(' — ').slice(0, 120) ||
-                  '(Chưa có triệu chứng/chẩn đoán)';
-                return (
-                  <li
-                    key={r.id}
-                    className="rounded-xl border border-slate-200 bg-slate-50/40 p-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="font-semibold text-slate-900">{r.patientName}</div>
-                      <div className="text-xs text-slate-500 truncate">{r.patientEmail}</div>
-                      <div className="text-xs text-slate-500 mt-0.5">{when}</div>
-                      <p className="text-xs text-slate-600 mt-2 line-clamp-2">{preview}</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => onOpenEditRecord(r)}
-                        className="px-3 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary/90"
-                      >
-                        Sửa hồ sơ
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-            <ListPagination
-              page={recordsPage.page}
-              totalPages={recordsPage.totalPages}
-              totalItems={recordsPage.totalItems}
-              pageSize={recordsPage.pageSize}
-              onPageChange={recordsPage.goToPage}
-              itemLabel="hồ sơ"
-              className="pt-3 border-t border-slate-100 mt-3"
-            />
+              <ul className="space-y-3">
+                {recordsPage.paginatedItems.map((r) => {
+                  const when = r.slotTime
+                    ? `${formatSlotDate(r.slotTime)} · ${formatSlotTime(r.slotTime)}`
+                    : new Date(r.createdAt).toLocaleString("vi-VN", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      });
+                  const preview =
+                    [r.symptoms, r.diagnosis]
+                      .filter(Boolean)
+                      .join(" — ")
+                      .slice(0, 120) || "(Chưa có triệu chứng/chẩn đoán)";
+                  return (
+                    <li
+                      key={r.id}
+                      className="rounded-xl border border-slate-200 bg-slate-50/40 p-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold text-slate-900">
+                          {r.patientName}
+                        </div>
+                        <div className="text-xs text-slate-500 truncate">
+                          {r.patientEmail}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5">
+                          {when}
+                        </div>
+                        <p className="text-xs text-slate-600 mt-2 line-clamp-2">
+                          {preview}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => onOpenEditRecord(r)}
+                          className="px-3 py-2 rounded-xl bg-primary text-white text-sm font-bold hover:bg-primary/90"
+                        >
+                          Sửa hồ sơ
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              <ListPagination
+                page={recordsPage.page}
+                totalPages={recordsPage.totalPages}
+                totalItems={recordsPage.totalItems}
+                pageSize={recordsPage.pageSize}
+                onPageChange={recordsPage.goToPage}
+                itemLabel="hồ sơ"
+                className="pt-3 border-t border-slate-100 mt-3"
+              />
             </div>
           )}
         </div>
@@ -1144,7 +1334,9 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
             <Palmtree className="w-5 h-5" />
           </span>
           <div>
-            <h2 className="text-base font-bold text-slate-900">Xin nghỉ phép</h2>
+            <h2 className="text-base font-bold text-slate-900">
+              Xin nghỉ phép
+            </h2>
             <p className="text-xs text-slate-500">Chỉ T2–T6 · quản trị duyệt</p>
           </div>
         </div>
@@ -1187,15 +1379,18 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
               disabled={leaveSubmitting}
               className="w-full sm:w-auto px-6 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 disabled:opacity-50 shadow-sm"
             >
-              {leaveSubmitting ? 'Đang gửi…' : 'Gửi đơn xin nghỉ'}
+              {leaveSubmitting ? "Đang gửi…" : "Gửi đơn xin nghỉ"}
             </button>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Ngày bắt đầu/kết thúc phải là <strong>thứ 2 – thứ 6</strong>. Sau khi duyệt, ca trống chuyển sang nghỉ
-              phép. Nếu có ca đã đặt, quản trị không duyệt cho đến khi xử lý xong.
+              Ngày bắt đầu/kết thúc phải là <strong>thứ 2 – thứ 6</strong>. Sau
+              khi duyệt, ca trống chuyển sang nghỉ phép. Nếu có ca đã đặt, quản
+              trị không duyệt cho đến khi xử lý xong.
             </p>
           </div>
           <div>
-            <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Đơn của tôi</h3>
+            <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+              Đơn của tôi
+            </h3>
             {leaveLoading ? (
               <div className="flex justify-center py-6">
                 <Loader2 className="w-6 h-6 text-primary animate-spin" />
@@ -1215,21 +1410,25 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
                       className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2.5 text-sm"
                     >
                       <div className="text-slate-800 min-w-0">
-                        <div className="font-medium text-slate-900">Ngày làm việc nghỉ</div>
+                        <div className="font-medium text-slate-900">
+                          Ngày làm việc nghỉ
+                        </div>
                         <div className="text-slate-600 text-xs mt-0.5 break-words">
                           {formatWorkdaysShortVi(workdays)}
                         </div>
                         {r.reason ? (
-                          <div className="text-slate-500 text-xs mt-1">Lý do: {r.reason}</div>
+                          <div className="text-slate-500 text-xs mt-1">
+                            Lý do: {r.reason}
+                          </div>
                         ) : null}
                       </div>
                       <span
                         className={`text-xs font-bold px-2.5 py-1 rounded-lg shrink-0 ${
-                          r.status === 'pending'
-                            ? 'bg-amber-100 text-amber-900'
-                            : r.status === 'approved'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-slate-200 text-slate-700'
+                          r.status === "pending"
+                            ? "bg-amber-100 text-amber-900"
+                            : r.status === "approved"
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-slate-200 text-slate-700"
                         }`}
                       >
                         {leaveStatusLabel(r.status)}
@@ -1287,7 +1486,11 @@ const SlotsTab: React.FC<SlotsTabProps> = ({
   onApplyPreset,
   rangeMatchesPreset,
 }) => {
-  const slotsPage = usePagination(filteredSlots, PAGE_SIZE.slots, `${fromDate}-${toDate}-${statusFilter}`);
+  const slotsPage = usePagination(
+    filteredSlots,
+    PAGE_SIZE.slots,
+    `${fromDate}-${toDate}-${statusFilter}`,
+  );
 
   return (
     <div className="space-y-4">
@@ -1297,7 +1500,9 @@ const SlotsTab: React.FC<SlotsTabProps> = ({
         </span>
         <div>
           <h2 className="text-base font-bold text-slate-900">Lịch ca khám</h2>
-          <p className="text-xs text-slate-500">Xem các ca theo khoảng ngày + trạng thái</p>
+          <p className="text-xs text-slate-500">
+            Xem các ca theo khoảng ngày + trạng thái
+          </p>
         </div>
       </div>
 
@@ -1318,7 +1523,7 @@ const SlotsTab: React.FC<SlotsTabProps> = ({
         >
           {DAY_PRESETS.map((n) => {
             const active = rangeMatchesPreset(n);
-            const label = n === 14 ? '14 ngày' : `${n} ngày`;
+            const label = n === 14 ? "14 ngày" : `${n} ngày`;
             return (
               <button
                 key={n}
@@ -1326,8 +1531,8 @@ const SlotsTab: React.FC<SlotsTabProps> = ({
                 onClick={() => onApplyPreset(n)}
                 className={`shrink-0 px-2 py-1 rounded-md text-xs font-semibold border transition-colors ${
                   active
-                    ? 'bg-primary text-white border-primary'
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    ? "bg-primary text-white border-primary"
+                    : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                 }`}
               >
                 {label}
@@ -1336,7 +1541,10 @@ const SlotsTab: React.FC<SlotsTabProps> = ({
           })}
         </div>
 
-        <div className="hidden sm:block h-6 w-px bg-slate-200 shrink-0" aria-hidden />
+        <div
+          className="hidden sm:block h-6 w-px bg-slate-200 shrink-0"
+          aria-hidden
+        />
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-1.5">
           <label className="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap">
@@ -1372,8 +1580,8 @@ const SlotsTab: React.FC<SlotsTabProps> = ({
               onClick={() => onSetStatusFilter(opt.id)}
               className={`flex-1 min-w-[4.5rem] sm:flex-none px-2 sm:px-2 py-1 rounded-md text-xs font-semibold transition-all ${
                 statusFilter === opt.id
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
               }`}
             >
               {opt.label}
@@ -1400,15 +1608,26 @@ const SlotsTab: React.FC<SlotsTabProps> = ({
             <table className="w-full">
               <thead className="bg-slate-50 sticky top-0 z-10">
                 <tr className="text-left">
-                  <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Ngày</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Giờ</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Trạng thái</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">
+                    Ngày
+                  </th>
+                  <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">
+                    Giờ
+                  </th>
+                  <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">
+                    Trạng thái
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {slotsPage.paginatedItems.map((s) => (
-                  <tr key={s.id} className="hover:bg-sky-50/40 even:bg-slate-50/35 transition-colors">
-                    <td className="px-4 py-3 font-medium text-slate-900">{formatSlotDate(s.slotTime)}</td>
+                  <tr
+                    key={s.id}
+                    className="hover:bg-sky-50/40 even:bg-slate-50/35 transition-colors"
+                  >
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      {formatSlotDate(s.slotTime)}
+                    </td>
                     <td className="px-4 py-3 text-sm text-slate-600">
                       <span className="inline-flex items-center gap-2">
                         <Clock className="w-4 h-4 text-slate-400 shrink-0" />
@@ -1418,11 +1637,11 @@ const SlotsTab: React.FC<SlotsTabProps> = ({
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex px-3 py-1 rounded-full text-xs font-bold ${
-                          s.status === 'booked'
-                            ? 'bg-amber-100 text-amber-800'
-                            : s.status === 'on_leave'
-                              ? 'bg-slate-200 text-slate-800'
-                              : 'bg-green-100 text-green-800'
+                          s.status === "booked"
+                            ? "bg-amber-100 text-amber-800"
+                            : s.status === "on_leave"
+                              ? "bg-slate-200 text-slate-800"
+                              : "bg-green-100 text-green-800"
                         }`}
                       >
                         {formatStatus(s.status)}
@@ -1469,7 +1688,7 @@ const AppointmentsTab: React.FC<AppointmentsTabProps> = ({
   onJumpToToday,
 }) => {
   const goPrev = () => {
-    if (view === 'day') {
+    if (view === "day") {
       onSetAnchorDate(addDaysIso(anchorDate, -1));
     } else {
       const start = startOfIsoWeek(anchorDate);
@@ -1477,7 +1696,7 @@ const AppointmentsTab: React.FC<AppointmentsTabProps> = ({
     }
   };
   const goNext = () => {
-    if (view === 'day') {
+    if (view === "day") {
       onSetAnchorDate(addDaysIso(anchorDate, 1));
     } else {
       const start = startOfIsoWeek(anchorDate);
@@ -1486,7 +1705,7 @@ const AppointmentsTab: React.FC<AppointmentsTabProps> = ({
   };
 
   const headerLabel = useMemo(() => {
-    if (view === 'day') return formatDayHeaderLong(anchorDate);
+    if (view === "day") return formatDayHeaderLong(anchorDate);
     const start = startOfIsoWeek(anchorDate);
     const end = addDaysIso(start, 6);
     return `Tuần ${formatWeekRange(start, end)}`;
@@ -1499,8 +1718,12 @@ const AppointmentsTab: React.FC<AppointmentsTabProps> = ({
           <CalendarClock className="w-5 h-5" />
         </span>
         <div className="min-w-0">
-          <h2 className="text-base font-bold text-slate-900">Lịch hẹn theo ngày / tuần</h2>
-          <p className="text-xs text-slate-500">Theo dõi lịch làm việc và ca đã được đặt</p>
+          <h2 className="text-base font-bold text-slate-900">
+            Lịch hẹn theo ngày / tuần
+          </h2>
+          <p className="text-xs text-slate-500">
+            Theo dõi lịch làm việc và ca đã được đặt
+          </p>
         </div>
       </div>
 
@@ -1510,7 +1733,7 @@ const AppointmentsTab: React.FC<AppointmentsTabProps> = ({
             type="button"
             onClick={goPrev}
             className="p-2 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-            aria-label={view === 'day' ? 'Ngày trước' : 'Tuần trước'}
+            aria-label={view === "day" ? "Ngày trước" : "Tuần trước"}
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -1525,7 +1748,7 @@ const AppointmentsTab: React.FC<AppointmentsTabProps> = ({
             type="button"
             onClick={goNext}
             className="p-2 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-            aria-label={view === 'day' ? 'Ngày sau' : 'Tuần sau'}
+            aria-label={view === "day" ? "Ngày sau" : "Tuần sau"}
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -1544,9 +1767,11 @@ const AppointmentsTab: React.FC<AppointmentsTabProps> = ({
         >
           <button
             type="button"
-            onClick={() => onChangeView('day')}
+            onClick={() => onChangeView("day")}
             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-              view === 'day' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              view === "day"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
             <CalendarDays className="w-3.5 h-3.5" />
@@ -1554,9 +1779,11 @@ const AppointmentsTab: React.FC<AppointmentsTabProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => onChangeView('week')}
+            onClick={() => onChangeView("week")}
             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-              view === 'week' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              view === "week"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
             <CalendarRange className="w-3.5 h-3.5" />
@@ -1565,20 +1792,22 @@ const AppointmentsTab: React.FC<AppointmentsTabProps> = ({
         </div>
       </div>
 
-      <div className="text-sm font-bold text-slate-900 capitalize">{headerLabel}</div>
+      <div className="text-sm font-bold text-slate-900 capitalize">
+        {headerLabel}
+      </div>
 
       {loading ? (
         <div className="flex justify-center py-16">
           <Loader2 className="w-10 h-10 text-primary animate-spin" />
         </div>
-      ) : view === 'day' ? (
+      ) : view === "day" ? (
         <DayAppointmentList appointments={appointments} />
       ) : (
         <WeekAppointmentGrid
           appointments={appointments}
           weekStart={startOfIsoWeek(anchorDate)}
           onPickDay={(iso) => {
-            onChangeView('day');
+            onChangeView("day");
             onSetAnchorDate(iso);
           }}
         />
@@ -1587,20 +1816,26 @@ const AppointmentsTab: React.FC<AppointmentsTabProps> = ({
   );
 };
 
-const DayAppointmentList: React.FC<{ appointments: ApiDoctorAppointment[] }> = ({ appointments }) => {
+const DayAppointmentList: React.FC<{
+  appointments: ApiDoctorAppointment[];
+}> = ({ appointments }) => {
   if (appointments.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-6 py-12 text-center">
         <Stethoscope className="w-10 h-10 mx-auto text-slate-300 mb-2" />
-        <p className="text-sm font-medium text-slate-700">Không có lịch hẹn nào trong ngày</p>
-        <p className="text-xs text-slate-500 mt-1">Bạn rảnh — hoặc chọn ngày khác để xem.</p>
+        <p className="text-sm font-medium text-slate-700">
+          Không có lịch hẹn nào trong ngày
+        </p>
+        <p className="text-xs text-slate-500 mt-1">
+          Bạn rảnh — hoặc chọn ngày khác để xem.
+        </p>
       </div>
     );
   }
   return (
     <ul className="space-y-2">
       {appointments.map((a) => {
-        const time = a.slot ? formatSlotTime(a.slot.slotTime) : '—';
+        const time = a.slot ? formatSlotTime(a.slot.slotTime) : "—";
         const badge = appointmentStatusBadge(a.status);
         return (
           <li
@@ -1608,15 +1843,21 @@ const DayAppointmentList: React.FC<{ appointments: ApiDoctorAppointment[] }> = (
             className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm hover:border-slate-300 transition-colors"
           >
             <div className="w-16 text-center shrink-0">
-              <div className="text-lg font-bold text-slate-900 tabular-nums leading-tight">{time}</div>
-              <div className="text-[10px] font-medium text-slate-400 uppercase">15 phút</div>
+              <div className="text-lg font-bold text-slate-900 tabular-nums leading-tight">
+                {time}
+              </div>
+              <div className="text-[10px] font-medium text-slate-400 uppercase">
+                15 phút
+              </div>
             </div>
             <div className="w-px h-12 bg-slate-100 shrink-0 hidden sm:block" />
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold">
-              {patientInitials(a.patient?.fullName ?? '?')}
+              {patientInitials(a.patient?.fullName ?? "?")}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="font-semibold text-slate-900 truncate">{a.patient?.fullName ?? 'Bệnh nhân'}</div>
+              <div className="font-semibold text-slate-900 truncate">
+                {a.patient?.fullName ?? "Bệnh nhân"}
+              </div>
               <div className="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
                 {a.patient?.email && (
                   <span className="inline-flex items-center gap-1 truncate">
@@ -1633,7 +1874,9 @@ const DayAppointmentList: React.FC<{ appointments: ApiDoctorAppointment[] }> = (
               </div>
               {a.symptoms && (
                 <p className="text-xs text-slate-600 mt-1 line-clamp-2">
-                  <span className="font-medium text-slate-700">Triệu chứng: </span>
+                  <span className="font-medium text-slate-700">
+                    Triệu chứng:{" "}
+                  </span>
                   {a.symptoms}
                 </p>
               )}
@@ -1658,7 +1901,7 @@ const DayAppointmentList: React.FC<{ appointments: ApiDoctorAppointment[] }> = (
   );
 };
 
-const WEEK_DAY_LABELS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+const WEEK_DAY_LABELS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
 const WeekAppointmentGrid: React.FC<{
   appointments: ApiDoctorAppointment[];
@@ -1670,7 +1913,7 @@ const WeekAppointmentGrid: React.FC<{
     const today = todayIso();
     for (let i = 0; i < 7; i++) {
       const iso = addDaysIso(weekStart, i);
-      const d = new Date(iso + 'T12:00:00');
+      const d = new Date(iso + "T12:00:00");
       out.push({ iso, date: d.getDate(), isToday: iso === today });
     }
     return out;
@@ -1686,7 +1929,11 @@ const WeekAppointmentGrid: React.FC<{
       map.set(dStr, arr);
     }
     for (const arr of map.values()) {
-      arr.sort((x, y) => new Date(x.slot!.slotTime).getTime() - new Date(y.slot!.slotTime).getTime());
+      arr.sort(
+        (x, y) =>
+          new Date(x.slot!.slotTime).getTime() -
+          new Date(y.slot!.slotTime).getTime(),
+      );
     }
     return map;
   }, [appointments]);
@@ -1702,14 +1949,14 @@ const WeekAppointmentGrid: React.FC<{
             onClick={() => onPickDay(d.iso)}
             className={`text-left rounded-xl border p-2 sm:p-3 min-h-[10rem] flex flex-col gap-2 transition-all hover:border-primary/50 hover:shadow-sm ${
               d.isToday
-                ? 'border-primary/40 bg-primary/[0.04] ring-1 ring-primary/20'
-                : 'border-slate-200 bg-white'
+                ? "border-primary/40 bg-primary/[0.04] ring-1 ring-primary/20"
+                : "border-slate-200 bg-white"
             }`}
           >
             <div className="flex items-center justify-between">
               <span
                 className={`text-[10px] font-bold uppercase tracking-wider ${
-                  idx >= 5 ? 'text-slate-400' : 'text-slate-500'
+                  idx >= 5 ? "text-slate-400" : "text-slate-500"
                 }`}
               >
                 {WEEK_DAY_LABELS[idx]}
@@ -1717,8 +1964,8 @@ const WeekAppointmentGrid: React.FC<{
               <span
                 className={`text-sm font-bold tabular-nums ${
                   d.isToday
-                    ? 'inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary text-white'
-                    : 'text-slate-900'
+                    ? "inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary text-white"
+                    : "text-slate-900"
                 }`}
               >
                 {d.date}
@@ -1729,33 +1976,39 @@ const WeekAppointmentGrid: React.FC<{
             ) : (
               <ul className="space-y-1 overflow-hidden">
                 {list.slice(0, 4).map((a) => {
-                  const t = a.slot ? formatSlotTime(a.slot.slotTime) : '';
+                  const t = a.slot ? formatSlotTime(a.slot.slotTime) : "";
                   const dotColor =
-                    a.status === 'completed'
-                      ? 'bg-emerald-500'
-                      : a.status === 'confirmed'
-                        ? 'bg-sky-500'
-                        : a.status === 'pending'
-                          ? 'bg-amber-500'
-                          : a.status === 'cancelled'
-                            ? 'bg-red-400'
-                            : 'bg-slate-400';
+                    a.status === "completed"
+                      ? "bg-emerald-500"
+                      : a.status === "confirmed"
+                        ? "bg-sky-500"
+                        : a.status === "pending"
+                          ? "bg-amber-500"
+                          : a.status === "cancelled"
+                            ? "bg-red-400"
+                            : "bg-slate-400";
                   return (
                     <li
                       key={a.id}
                       className="flex items-start gap-1.5 text-[11px] leading-snug"
-                      title={`${t} - ${a.patient?.fullName ?? ''}`}
+                      title={`${t} - ${a.patient?.fullName ?? ""}`}
                     >
-                      <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
-                      <span className="font-semibold text-slate-700 tabular-nums">{t}</span>
+                      <span
+                        className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`}
+                      />
+                      <span className="font-semibold text-slate-700 tabular-nums">
+                        {t}
+                      </span>
                       <span className="text-slate-600 truncate">
-                        {a.patient?.fullName ?? '—'}
+                        {a.patient?.fullName ?? "—"}
                       </span>
                     </li>
                   );
                 })}
                 {list.length > 4 && (
-                  <li className="text-[10px] font-semibold text-primary">+{list.length - 4} ca nữa</li>
+                  <li className="text-[10px] font-semibold text-primary">
+                    +{list.length - 4} ca nữa
+                  </li>
                 )}
               </ul>
             )}
@@ -1792,11 +2045,13 @@ const PatientsTab: React.FC<PatientsTabProps> = ({
             <Users className="w-5 h-5" />
           </span>
           <div>
-            <h2 className="text-base font-bold text-slate-900">Bệnh nhân của tôi</h2>
+            <h2 className="text-base font-bold text-slate-900">
+              Bệnh nhân của tôi
+            </h2>
             <p className="text-xs text-slate-500">
               {totalCount > 0
                 ? `Tổng ${totalCount} bệnh nhân từng đặt lịch`
-                : 'Chưa có bệnh nhân nào'}
+                : "Chưa có bệnh nhân nào"}
             </p>
           </div>
         </div>
@@ -1821,17 +2076,21 @@ const PatientsTab: React.FC<PatientsTabProps> = ({
       ) : totalCount === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-6 py-12 text-center">
           <UserRound className="w-10 h-10 mx-auto text-slate-300 mb-2" />
-          <p className="text-sm font-medium text-slate-700">Chưa có bệnh nhân nào đặt lịch</p>
+          <p className="text-sm font-medium text-slate-700">
+            Chưa có bệnh nhân nào đặt lịch
+          </p>
           <p className="text-xs text-slate-500 mt-1">
             Khi có bệnh nhân đặt lịch với bạn, danh sách sẽ hiển thị tại đây.
           </p>
         </div>
       ) : patients.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-6 py-12 text-center">
-          <p className="text-sm font-medium text-slate-700">Không tìm thấy bệnh nhân nào khớp</p>
+          <p className="text-sm font-medium text-slate-700">
+            Không tìm thấy bệnh nhân nào khớp
+          </p>
           <button
             type="button"
-            onClick={() => onSearchChange('')}
+            onClick={() => onSearchChange("")}
             className="mt-3 px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/5 rounded-lg"
           >
             Xoá bộ lọc
@@ -1839,19 +2098,19 @@ const PatientsTab: React.FC<PatientsTabProps> = ({
         </div>
       ) : (
         <>
-        <ul className="grid sm:grid-cols-2 gap-3">
-          {patientsPage.paginatedItems.map((p) => (
-            <PatientCard key={p.id} patient={p} />
-          ))}
-        </ul>
-        <ListPagination
-          page={patientsPage.page}
-          totalPages={patientsPage.totalPages}
-          totalItems={patientsPage.totalItems}
-          pageSize={patientsPage.pageSize}
-          onPageChange={patientsPage.goToPage}
-          itemLabel="bệnh nhân"
-        />
+          <ul className="grid sm:grid-cols-2 gap-3">
+            {patientsPage.paginatedItems.map((p) => (
+              <PatientCard key={p.id} patient={p} />
+            ))}
+          </ul>
+          <ListPagination
+            page={patientsPage.page}
+            totalPages={patientsPage.totalPages}
+            totalItems={patientsPage.totalItems}
+            pageSize={patientsPage.pageSize}
+            onPageChange={patientsPage.goToPage}
+            itemLabel="bệnh nhân"
+          />
         </>
       )}
     </div>
@@ -1866,7 +2125,9 @@ const PatientCard: React.FC<{ patient: ApiDoctorPatient }> = ({ patient }) => (
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-bold text-slate-900 truncate">{patient.fullName}</h3>
+          <h3 className="font-bold text-slate-900 truncate">
+            {patient.fullName}
+          </h3>
           {patient.upcomingAppointments > 0 && (
             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-sky-50 text-sky-700 border border-sky-200">
               {patient.upcomingAppointments} sắp tới
@@ -1894,17 +2155,25 @@ const PatientCard: React.FC<{ patient: ApiDoctorPatient }> = ({ patient }) => (
 
     <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-slate-100">
       <div>
-        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Tổng</div>
-        <div className="text-lg font-bold text-slate-900 tabular-nums">{patient.totalAppointments}</div>
+        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+          Tổng
+        </div>
+        <div className="text-lg font-bold text-slate-900 tabular-nums">
+          {patient.totalAppointments}
+        </div>
       </div>
       <div>
-        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Hoàn tất</div>
+        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+          Hoàn tất
+        </div>
         <div className="text-lg font-bold text-emerald-700 tabular-nums">
           {patient.completedAppointments}
         </div>
       </div>
       <div>
-        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Sắp tới</div>
+        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+          Sắp tới
+        </div>
         <div className="text-lg font-bold text-sky-700 tabular-nums">
           {patient.upcomingAppointments}
         </div>
@@ -1913,13 +2182,21 @@ const PatientCard: React.FC<{ patient: ApiDoctorPatient }> = ({ patient }) => (
 
     <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-2 gap-3 text-xs">
       <div>
-        <div className="text-[10px] font-semibold text-slate-400 uppercase">Khám gần nhất</div>
-        <div className="text-slate-700 mt-0.5">{formatRelativeDate(patient.lastVisitAt)}</div>
+        <div className="text-[10px] font-semibold text-slate-400 uppercase">
+          Khám gần nhất
+        </div>
+        <div className="text-slate-700 mt-0.5">
+          {formatRelativeDate(patient.lastVisitAt)}
+        </div>
       </div>
       <div>
-        <div className="text-[10px] font-semibold text-slate-400 uppercase">Lịch sắp tới</div>
+        <div className="text-[10px] font-semibold text-slate-400 uppercase">
+          Lịch sắp tới
+        </div>
         <div className="text-slate-700 mt-0.5">
-          {patient.nextAppointmentAt ? formatRelativeDate(patient.nextAppointmentAt) : '—'}
+          {patient.nextAppointmentAt
+            ? formatRelativeDate(patient.nextAppointmentAt)
+            : "—"}
         </div>
       </div>
     </div>
@@ -1933,14 +2210,17 @@ interface StatsTabProps {
   preset: StatsRangePreset;
   from: string;
   to: string;
-  onApplyPreset: (p: Exclude<StatsRangePreset, 'custom'>) => void;
+  onApplyPreset: (p: Exclude<StatsRangePreset, "custom">) => void;
   onSetCustomRange: (next: { from?: string; to?: string }) => void;
 }
 
-const STATS_PRESETS: { id: Exclude<StatsRangePreset, 'custom'>; label: string }[] = [
-  { id: '7d', label: '7 ngày' },
-  { id: '30d', label: '30 ngày' },
-  { id: '90d', label: '90 ngày' },
+const STATS_PRESETS: {
+  id: Exclude<StatsRangePreset, "custom">;
+  label: string;
+}[] = [
+  { id: "7d", label: "7 ngày" },
+  { id: "30d", label: "30 ngày" },
+  { id: "90d", label: "90 ngày" },
 ];
 
 function formatPercent(v: number): string {
@@ -1948,8 +2228,8 @@ function formatPercent(v: number): string {
 }
 
 function formatShortDate(iso: string): string {
-  const d = new Date(iso + 'T12:00:00');
-  return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+  const d = new Date(iso + "T12:00:00");
+  return d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
 }
 
 const StatsTab: React.FC<StatsTabProps> = ({
@@ -1978,7 +2258,9 @@ const StatsTab: React.FC<StatsTabProps> = ({
           <BarChart3 className="w-5 h-5" />
         </span>
         <div className="min-w-0">
-          <h2 className="text-base font-bold text-slate-900">Thống kê bệnh án</h2>
+          <h2 className="text-base font-bold text-slate-900">
+            Thống kê bệnh án
+          </h2>
           <p className="text-xs text-slate-500">
             Tổng quan hoạt động khám chữa bệnh trong khoảng đã chọn
           </p>
@@ -1998,8 +2280,8 @@ const StatsTab: React.FC<StatsTabProps> = ({
               onClick={() => onApplyPreset(p.id)}
               className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
                 preset === p.id
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
               }`}
             >
               {p.label}
@@ -2007,7 +2289,9 @@ const StatsTab: React.FC<StatsTabProps> = ({
           ))}
           <span
             className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-              preset === 'custom' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+              preset === "custom"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500"
             }`}
             aria-hidden
           >
@@ -2085,10 +2369,13 @@ const StatsTab: React.FC<StatsTabProps> = ({
           <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
             <div className="flex items-center justify-between gap-3 mb-3">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">Số hồ sơ theo ngày</h3>
+                <h3 className="text-sm font-bold text-slate-900">
+                  Số hồ sơ theo ngày
+                </h3>
                 <p className="text-xs text-slate-500">
-                  {formatShortDate(stats.range.from)} – {formatShortDate(stats.range.to)} · cao
-                  nhất: <span className="font-semibold tabular-nums">{maxByDay}</span>
+                  {formatShortDate(stats.range.from)} –{" "}
+                  {formatShortDate(stats.range.to)} · cao nhất:{" "}
+                  <span className="font-semibold tabular-nums">{maxByDay}</span>
                 </p>
               </div>
               <span className="hidden sm:flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -2102,8 +2389,12 @@ const StatsTab: React.FC<StatsTabProps> = ({
           <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
             <div className="flex items-center justify-between gap-3 mb-3">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">Top chẩn đoán</h3>
-                <p className="text-xs text-slate-500">10 chẩn đoán xuất hiện nhiều nhất</p>
+                <h3 className="text-sm font-bold text-slate-900">
+                  Top chẩn đoán
+                </h3>
+                <p className="text-xs text-slate-500">
+                  10 chẩn đoán xuất hiện nhiều nhất
+                </p>
               </div>
               <span className="hidden sm:flex h-9 w-9 items-center justify-center rounded-xl bg-fuchsia-500/10 text-fuchsia-700">
                 <PieChart className="w-4 h-4" />
@@ -2116,9 +2407,13 @@ const StatsTab: React.FC<StatsTabProps> = ({
             ) : (
               <ul className="space-y-2">
                 {stats.topDiagnoses.map((d, idx) => {
-                  const pct = maxTopCount > 0 ? (d.count / maxTopCount) * 100 : 0;
+                  const pct =
+                    maxTopCount > 0 ? (d.count / maxTopCount) * 100 : 0;
                   return (
-                    <li key={d.keyword + idx} className="flex items-center gap-3">
+                    <li
+                      key={d.keyword + idx}
+                      className="flex items-center gap-3"
+                    >
                       <span className="w-5 text-right text-xs font-bold text-slate-400 tabular-nums">
                         {idx + 1}
                       </span>
@@ -2158,36 +2453,48 @@ interface KpiCardProps {
   label: string;
   value: number | string;
   sublabel?: string;
-  tone: 'primary' | 'emerald' | 'sky' | 'amber';
+  tone: "primary" | "emerald" | "sky" | "amber";
 }
 
-const KpiCard: React.FC<KpiCardProps> = ({ icon: Icon, label, value, sublabel, tone }) => {
+const KpiCard: React.FC<KpiCardProps> = ({
+  icon: Icon,
+  label,
+  value,
+  sublabel,
+  tone,
+}) => {
   const tones = {
-    primary: 'bg-primary/10 text-primary',
-    emerald: 'bg-emerald-500/10 text-emerald-700',
-    sky: 'bg-sky-500/10 text-sky-700',
-    amber: 'bg-amber-500/10 text-amber-700',
+    primary: "bg-primary/10 text-primary",
+    emerald: "bg-emerald-500/10 text-emerald-700",
+    sky: "bg-sky-500/10 text-sky-700",
+    amber: "bg-amber-500/10 text-amber-700",
   };
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-center gap-2.5 mb-2">
-        <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${tones[tone]}`}>
+        <span
+          className={`flex h-9 w-9 items-center justify-center rounded-xl ${tones[tone]}`}
+        >
           <Icon className="w-4 h-4" />
         </span>
         <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
           {label}
         </span>
       </div>
-      <div className="text-2xl font-bold text-slate-900 tabular-nums leading-tight">{value}</div>
-      {sublabel ? <div className="text-[11px] text-slate-500 mt-1">{sublabel}</div> : null}
+      <div className="text-2xl font-bold text-slate-900 tabular-nums leading-tight">
+        {value}
+      </div>
+      {sublabel ? (
+        <div className="text-[11px] text-slate-500 mt-1">{sublabel}</div>
+      ) : null}
     </div>
   );
 };
 
-const ByDayBars: React.FC<{ data: { date: string; count: number }[]; max: number }> = ({
-  data,
-  max,
-}) => {
+const ByDayBars: React.FC<{
+  data: { date: string; count: number }[];
+  max: number;
+}> = ({ data, max }) => {
   if (data.length === 0) {
     return (
       <p className="text-sm text-slate-500 text-center py-6">
@@ -2214,20 +2521,20 @@ const ByDayBars: React.FC<{ data: { date: string; count: number }[]; max: number
               title={`${d.date}: ${d.count} hồ sơ`}
             >
               <span className="text-[9px] font-semibold tabular-nums text-slate-400 group-hover:text-slate-700 transition-colors">
-                {d.count > 0 ? d.count : ''}
+                {d.count > 0 ? d.count : ""}
               </span>
               <div
                 className={`w-full rounded-t-md transition-colors ${
                   d.count === 0
-                    ? 'bg-slate-100'
+                    ? "bg-slate-100"
                     : isToday
-                      ? 'bg-gradient-to-t from-primary to-primary/70'
-                      : 'bg-gradient-to-t from-sky-400 to-sky-300 group-hover:from-sky-500 group-hover:to-sky-400'
+                      ? "bg-gradient-to-t from-primary to-primary/70"
+                      : "bg-gradient-to-t from-sky-400 to-sky-300 group-hover:from-sky-500 group-hover:to-sky-400"
                 }`}
                 style={{ height: `${Math.max(h, d.count > 0 ? 4 : 2)}%` }}
               />
               <span className="text-[9px] font-medium text-slate-400 tabular-nums whitespace-nowrap">
-                {idx % showEveryNth === 0 ? formatShortDate(d.date) : ''}
+                {idx % showEveryNth === 0 ? formatShortDate(d.date) : ""}
               </span>
             </div>
           );

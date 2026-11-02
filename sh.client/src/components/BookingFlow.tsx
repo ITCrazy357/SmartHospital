@@ -707,7 +707,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
                 {[
                   {
                     id: "card",
-                    name: "Thẻ tín dụng/ghi nợ",
+                    name: "Chuyển khoản QR (PayOS)",
                     icon: CreditCard,
                     supported: true,
                   },
@@ -773,13 +773,13 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
                     cancelUrl,
                   });
                   if (res.checkoutUrl) {
-                    window.open(res.checkoutUrl, "_blank");
+                    window.location.assign(
+                      `?view=booking-success&appointmentId=${encodeURIComponent(res.appointment.id)}`,
+                    );
                     setPayosTabOpened(true);
                     setPendingAppointmentId(res.appointment.id);
                     setPaymentCheckError(null);
-                    toast.success(
-                      "Đã tạo lịch. Tab thanh toán PayOS đã mở — vui lòng hoàn tất cọc.",
-                    );
+                    toast.success("Đã giữ lịch; vui lòng tiếp tục thanh toán.");
                     return;
                   }
                   setBookingError(

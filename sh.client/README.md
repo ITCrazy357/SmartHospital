@@ -1,20 +1,18 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# SmartHospital frontend
 
-# Run and deploy your AI Studio app
+React + Vite. Yêu cầu Node.js 22.
 
-This contains everything you need to run your app locally.
+```sh
+npm ci
+npm run dev
+npm run lint
+npm run build
+```
 
-View your app in AI Studio: https://ai.studio/apps/54f0ba71-f2da-4dbf-9b29-63f402123289
+Copy `.env.example` thành `.env` và cấu hình `VITE_API_URL` trỏ API NestJS. Biến `VITE_*` là công khai trong trình duyệt, không đặt API key hay thông tin bí mật vào đây. AI đi qua backend, cần cấu hình và đồng ý xử lý dữ liệu ở server.
 
-## Run Locally
+Hướng dẫn chạy: [hướng dẫn dự án](../HUONG_DAN_CHAY_DU_AN.md). Quy trình nghiệp vụ, vai trò và cách dùng: [Clinic workflows](../docs/CLINIC_WORKFLOWS.md).
 
-**Prerequisites:**  Node.js
+Trước triển khai, cấu hình tên, liên hệ thực của phòng khám và URL chính sách trong `.env.example`. Các thông tin chưa cấu hình không được thay bằng dữ liệu liên hệ giả.
 
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Kịch bản kiểm tra trình duyệt dùng toàn bộ dữ liệu giả: `scripts/clinic-browser-smoke.cjs`. Xem giới hạn và cách chạy tại [QA record](../docs/qa/clinic-browser-smoke-2026-11-02.md).
