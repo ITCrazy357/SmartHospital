@@ -1,14 +1,20 @@
-import { CanActivate, ExecutionContext, HttpException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, HttpException, Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { Cron } from '@nestjs/schedule';
 import { createHash } from 'node:crypto';
 import { DataSource } from 'typeorm';
+import { RedisService } from '../redis/redis.service';
 
 @Injectable()
 export class RequestLimitService {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(@InjectDataSource() private readonly dataSource: DataSource, @Optional() private readonly redis?: RedisService) {}
 
   async consume(bucket: string, limit: number, windowSeconds: number): Promise<void> {
+    if (this.redis?.isConfigured() || this.redis?.isRequired()) {
+      const allowed = await this.redis.consume(bucket, limit, windowSeconds);
+      if (!allowed) throw new HttpException('Đã vượt hạn mức yêu cầu. Vui lòng thử lại sau.', 429);
+      return;
+    }
     let rows: { count: number }[];
     try {
       rows = await this.dataSource.query(`INSERT INTO request_limits(bucket,count,resets_at)
@@ -26,6 +32,8 @@ export class RequestLimitService {
 
   @Cron('0 10 * * * *')
   async cleanExpired(): Promise<void> {
+    // Clean legacy buckets even when Redis is now enabled; they may remain from
+    // a previous deployment. PostgreSQL is not an outage fallback for Redis.
     try { await this.dataSource.query("DELETE FROM request_limits WHERE resets_at<now()-interval '1 day'"); } catch { /* a request fails closed if DB is unavailable */ }
   }
 }

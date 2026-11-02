@@ -19,6 +19,7 @@ import { DoctorAiModule } from './doctor-ai/doctor-ai.module';
 import { ClinicModule } from './clinic/clinic.module';
 import { SchedulesModule } from './schedules/schedules.module';
 import { HealthController } from './health.controller';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { HealthController } from './health.controller';
       // Luôn đọc .env cạnh thư mục build (dist/), không phụ thuộc cwd — tránh “SMTP chưa cấu hình” khi chạy từ repo gốc
       envFilePath: join(__dirname, '..', '.env'),
     }),
+    RedisModule,
     ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       useFactory: () => {

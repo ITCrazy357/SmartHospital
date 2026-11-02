@@ -1,16 +1,21 @@
-import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import { Controller, Get, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { readdirSync } from 'fs';
 import { join } from 'path';
+import { RedisService } from './redis/redis.service';
 
 @Controller('health')
 export class HealthController {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    @Optional() private readonly redis?: RedisService,
+  ) {}
   @Get('live') live() {
     return { status: 'ok' };
   }
   @Get('ready') async ready() {
     try {
+      if (this.redis && !(await this.redis.ready())) throw new Error('dependency');
       // Representative schema/relations, not merely a socket or SELECT 1.
       await this.dataSource
         .query(`SELECT u.token_version,a.cancelled_at,p.reconciliation_status,

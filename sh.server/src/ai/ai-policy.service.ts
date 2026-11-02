@@ -74,7 +74,7 @@ export class AiPolicyService {
 
   async claimEmbedding(recordId: string, version: number): Promise<boolean> {
     try {
-      // An expiring DB reservation survives worker restarts and bounds duplicate
+      // An expiring shared reservation survives worker restarts and bounds duplicate
       // calls across replicas, while allowing retry after a worker crash.
       await this.limits.consume(`embedding:${recordId}:${version}`, 1, 900);
       return true;

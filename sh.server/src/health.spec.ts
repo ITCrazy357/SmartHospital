@@ -7,6 +7,7 @@ import { join } from 'path';
 import { HealthController } from './health.controller';
 import { RequestValidationPipe } from './common/request-validation.pipe';
 import { CreateDepartmentDto } from './departments/dto/departments.dto';
+import { RedisService } from './redis/redis.service';
 
 const saved = jest.fn();
 @Controller('fixture')
@@ -24,10 +25,14 @@ describe('HTTP readiness and request validation boundary', () => {
     (name) => /^\d{3}_.*\.sql$/.test(name),
   );
   const query = jest.fn();
+  const redisReady = jest.fn();
   beforeAll(async () => {
     const module = await Test.createTestingModule({
       controllers: [HealthController, ValidationFixtureController],
-      providers: [{ provide: DataSource, useValue: { query } }],
+      providers: [
+        { provide: DataSource, useValue: { query } },
+        { provide: RedisService, useValue: { ready: redisReady } },
+      ],
     }).compile();
     app = module.createNestApplication();
     app.useGlobalPipes(new RequestValidationPipe());
@@ -36,6 +41,7 @@ describe('HTTP readiness and request validation boundary', () => {
   beforeEach(() => {
     saved.mockClear();
     query.mockReset();
+    redisReady.mockReset().mockResolvedValue(true);
     query.mockImplementation(async (sql: string) =>
       sql.includes('schema_migrations')
         ? expected.map((name) => ({ name }))
@@ -50,6 +56,13 @@ describe('HTTP readiness and request validation boundary', () => {
     await request(app.getHttpServer())
       .get('/health/live')
       .expect(200, { status: 'ok' });
+    expect(query).not.toHaveBeenCalled();
+    expect(redisReady).not.toHaveBeenCalled();
+  });
+  it('marks an unavailable Redis dependency unready without exposing its connection details', async () => {
+    redisReady.mockResolvedValue(false);
+    const response = await request(app.getHttpServer()).get('/health/ready').expect(503);
+    expect(response.body.statusCode).toBe(503);
     expect(query).not.toHaveBeenCalled();
   });
   it('requires representative schema and every migration for readiness', async () => {

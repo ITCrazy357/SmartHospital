@@ -14,6 +14,7 @@ import { MailService } from '../src/auth/mail.service';
 import { PayOSService } from '../src/payos/payos.service';
 import { OpenAIService } from '../src/ai/openai.service';
 import { RequestValidationPipe } from '../src/common/request-validation.pipe';
+import { RedisService } from '../src/redis/redis.service';
 const { runMigrations } = require('../scripts/migrate.cjs');
 const url = process.env.TEST_DATABASE_URL;
 const integration = url ? describe : describe.skip;
@@ -24,7 +25,8 @@ integration('full application module and HTTP clinic workflow on disposable Post
   type Role = typeof roles[number];
   const identities: Partial<Record<Role, string>> = {}, tokens: Partial<Record<Role, string>> = {};
   const password = 'FixturePassword123!';
-  const priorEnvironment = { NODE_ENV: process.env.NODE_ENV, JWT_SECRET: process.env.JWT_SECRET, AI_ENABLED: process.env.AI_ENABLED };
+  const priorEnvironment = { NODE_ENV: process.env.NODE_ENV, JWT_SECRET: process.env.JWT_SECRET, AI_ENABLED: process.env.AI_ENABLED,
+    REDIS_URL: process.env.REDIS_URL, REDIS_REQUIRED: process.env.REDIS_REQUIRED, REDIS_KEY_PREFIX: process.env.REDIS_KEY_PREFIX };
   const external = jest.fn(async () => { throw new Error('An external provider must not be called by this smoke test'); });
 
   beforeAll(async () => {
@@ -38,6 +40,17 @@ integration('full application module and HTTP clinic workflow on disposable Post
     client = new Client({ connectionString: url, connectionTimeoutMillis: 5000 }); await client.connect();
     await client.query('CREATE EXTENSION IF NOT EXISTS vector'); await client.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
     schema = `application_test_${randomUUID().replace(/-/g, '')}`;
+    if (process.env.TEST_REDIS_URL) {
+      const redisTarget = new URL(process.env.TEST_REDIS_URL);
+      if (!['127.0.0.1', 'localhost'].includes(redisTarget.hostname)) throw new Error('A local disposable TEST_REDIS_URL is required');
+      process.env.REDIS_URL = process.env.TEST_REDIS_URL;
+      process.env.REDIS_REQUIRED = 'true';
+      process.env.REDIS_KEY_PREFIX = schema;
+    } else {
+      delete process.env.REDIS_URL;
+      delete process.env.REDIS_REQUIRED;
+      delete process.env.REDIS_KEY_PREFIX;
+    }
     await client.query(`CREATE SCHEMA "${schema}"`); await client.query(`SET search_path TO "${schema}",public`);
     await runMigrations(client, { log() {} });
     db = new DataSource({ type: 'postgres', url, synchronize: false,
@@ -89,6 +102,10 @@ integration('full application module and HTTP clinic workflow on disposable Post
   };
 
   it('boots the full provider graph, serves readiness, enforces admin roles and hides public credentials', async () => {
+    if (process.env.TEST_REDIS_URL) {
+      expect(app.get(RedisService).state()).toEqual({ configured: true, required: true, ready: true });
+      expect(await db.query('SELECT * FROM request_limits')).toHaveLength(0);
+    }
     await request(app.getHttpServer()).get('/health/live').expect(200, { status: 'ok' });
     await request(app.getHttpServer()).get('/health/ready').expect(200, { status: 'ready' });
     await request(app.getHttpServer()).get('/admin/users').expect(401);

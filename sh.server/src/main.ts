@@ -15,6 +15,7 @@ async function bootstrap() {
   }
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.enableShutdownHooks();
   app.useGlobalPipes(new RequestValidationPipe());
   const proxyHops = Number(process.env.TRUST_PROXY_HOPS ?? '0');
   if (!Number.isInteger(proxyHops) || proxyHops < 0 || proxyHops > 5)

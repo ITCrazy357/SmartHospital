@@ -29,6 +29,43 @@ Các lệnh migration cũ được giữ làm alias tới runner mới. `db:rese
 
 Docker image đóng gói migration/scripts để chạy release command `npm run db:migrate` trong môi trường có kết nối DB trước khi khởi động API. Startup API không tự chạy DDL. Kiểm tra `/health/ready` sau triển khai; Docker HEALTHCHECK dùng cùng endpoint.
 
+## Redis coordination
+
+`docker compose up -d` in `sh.server` starts a local Redis 7.4 service bound to
+127.0.0.1. Set `REDIS_URL=redis://127.0.0.1:6379/0` for a locally running API.
+Redis uses AOF, a persistent volume and `noeviction`: exhausting memory must
+reject protection writes instead of silently removing quota/lease keys.
+Production must use a private authenticated connection or TLS `rediss://`;
+the local unauthenticated Compose service must not be published to the internet.
+
+Redis stores hashed quota keys and short-lived job leases, not clinical records,
+patient text, payment ledgers or JWT revocation state. Auth/AI quotas are atomic
+and shared by replicas. The same deployment must use the same
+`REDIS_KEY_PREFIX`; unrelated deployments must use different prefixes. Do not
+change the prefix during an incident to bypass exhausted quotas. Limit TTLs
+bound storage; do not use FLUSHDB/FLUSHALL during routine operations.
+
+When `REDIS_URL` is absent and `REDIS_REQUIRED=false`, request quotas retain the
+existing PostgreSQL implementation and background jobs retain their database
+protections. With Redis configured, an outage returns 503 for protected requests
+and skips coordinated background jobs until a later run. It never switches to a
+separate quota store. `REDIS_REQUIRED=true` also fails closed if the URL is
+missing. Readiness checks connectivity with `REDIS_TIMEOUT_MS` (default 1000ms,
+range 100-10000); liveness stays independent. Connections recover on later
+requests without queueing stale commands offline.
+
+Renewable token-owned leases coordinate reminders, payment reconciliation,
+pending-booking expiry, slot cleanup/generation and embedding retries. Database
+locks, transactions, consent checks and idempotency remain authoritative.
+SMTP acceptance followed by process failure can still cause a repeated email;
+this is at-least-once delivery, not an exactly-once guarantee. Monitor readiness,
+Redis memory/persistence errors and skipped-job warnings before enabling pilots.
+
+CI supplies both `TEST_DATABASE_URL` and `TEST_REDIS_URL` from disposable local
+services. For a local run, set the latter to the test Redis endpoint before
+`npm run test:integration`. Redis tests use unique prefixes and delete only their
+own keys; they exercise concurrent quotas, lease exclusion and connection loss.
+
 ## Backup
 
 Backup chứa dữ liệu bệnh nhân. Lưu ở vị trí được kiểm soát truy cập, có mã hóa và chính sách lưu giữ của cơ sở; không lưu trong Git. Với Windows, quyền file còn phụ thuộc ACL của thư mục đích.
