@@ -1,0 +1,47 @@
+name: SmartHospital deployment verification
+
+on:
+  workflow_run:
+    workflows: [SmartHospital checks]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  verify-production:
+    name: Verify deployed commit and production health
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    # Only eligible jobs join concurrency, and unrelated/older revisions cannot
+    # cancel the observer for the current production candidate.
+    concurrency:
+      group: production-verification-${{ github.event.workflow_run.head_sha || github.sha }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Read-only verification code comes from the default branch snapshot.
+          # The expected deployed SHA is taken separately from the successful CI.
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Wait for Render/Vercel to serve the tested revision
+        run: node scripts/verify-deployment.mjs
+        env:
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL }}
+          PRODUCTION_WEB_URL: ${{ vars.PRODUCTION_WEB_URL }}

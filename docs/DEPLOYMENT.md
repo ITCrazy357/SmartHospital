@@ -1,4 +1,4 @@
-# Deployment and CI
+# Deployment, CI and CD
 
 SmartHospital has two applications: `sh.client` is a Vite static frontend and
 `sh.server` is a long-running NestJS backend. Vercel deploys the frontend only.
@@ -65,6 +65,14 @@ the workflow or frontend variables.
 Use the check/deployment attached to the exact commit being investigated.
 A failed historical run remains failed after a later commit fixes its cause.
 
+## Continuous deployment verification
+
+Render and Vercel already deploy through their Git integrations. The selected
+model keeps this native auto-deploy and adds `.github/workflows/cd.yml`: after
+successful main-push CI it checks the exact live backend/frontend revisions,
+API readiness and the frontend page. No new deploy token is required. See
+[CD configuration and retry instructions](CD.md).
+
 ## Render backend
 
 The reported production logs show missing `doctor_schedule_rules` and
@@ -96,7 +104,9 @@ reminder state, so a complete migration ledger alone cannot hide that drift.
 
 Alternatively, on a plan supporting Pre-Deploy Commands, use `npm run db:migrate`
 and keep Start Command `npm run start:prod`; choose one migration entry point.
-Set Auto-Deploy to **After CI Checks Pass** and check the exact deployed commit.
+Keep Auto-Deploy **On Commit** for the selected native-deploy/observer model;
+the observer itself waits for deployment and must not be a prerequisite for
+starting that deployment. Check the exact deployed commit. See [CD.md](CD.md).
 Adding a script to Git does not change the dashboard commands of an existing
 Render service. Do not put production migrations in GitHub's test database job.
 
