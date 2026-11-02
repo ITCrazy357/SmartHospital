@@ -69,8 +69,9 @@ A failed historical run remains failed after a later commit fixes its cause.
 
 Render and Vercel already deploy through their Git integrations. The selected
 model keeps this native auto-deploy and adds `.github/workflows/cd.yml`: after
-successful main-push CI it checks the exact live backend/frontend revisions,
-API readiness and the frontend page. No new deploy token is required. See
+successful main-push CI it checks live backend/frontend revisions (or proves
+unchanged app source for a skipped monorepo deploy), API readiness and the
+frontend page. No new deploy token is required. See
 [CD configuration and retry instructions](CD.md).
 
 ## Render backend

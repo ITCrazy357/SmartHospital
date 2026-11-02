@@ -13,7 +13,7 @@ flowchart LR
   CI -->|success| CD[Production verification]
   Render --> CD
   Vercel --> CD
-  CD --> Result[Both exact revisions and health verified]
+  CD --> Result[Both application sources and health verified]
 ```
 
 ## Provider settings
@@ -37,7 +37,7 @@ flowchart LR
 successfully for a same-repository `push` to `main`. Pull requests, forks,
 failed CI and non-main branches do not run production probes. Permissions are
 read-only (`contents: read`, `actions: read`). Verification code is checked out
-from the workflow's default-branch snapshot; the expected deployed revision
+from the workflow's default-branch snapshot; the expected CI revision
 comes separately from the triggering CI run's `head_sha`, not `GITHUB_SHA`.
 
 `scripts/verify-deployment.mjs` independently checks that successful main-push
@@ -46,14 +46,25 @@ waits for all of these public, read-only checks:
 
 | Endpoint | Required result |
 | --- | --- |
-| Backend `/health/version` | Exact tested SHA |
+| Backend `/health/version` | Tested SHA, or proven identical backend source at an ancestor SHA |
 | Backend `/health/ready` | HTTP 200 and `status: ready` |
-| Frontend `/deployment.json` | Exact tested SHA |
+| Frontend `/deployment.json` | Tested SHA, or proven identical frontend source/config at an ancestor SHA |
 | Frontend `/` | HTTP 200 and the HTML application shell |
 
-Both identities are checked again after health/page probes. A healthy older
-release, generic SPA HTML at the JSON path, missing revision, redirect or
-malformed response is not a successful verification. Responses and provider
+Native monorepo integrations can skip CI/docs-only commits outside an app's
+Root Directory. For a different live SHA, the verifier requires GitHub compare
+metadata proving the live commit is an ancestor of the CI commit. It then
+compares immutable Git trees: backend `sh.server`; frontend `sh.client` plus
+the root `vercel.json` blob. Only identical inputs are accepted. If shared
+runtime/build inputs are added outside these paths, extend this source map.
+Git objects are cached within a run; the mutable main head is always rechecked.
+
+The summary records the CI SHA, each actual deployed SHA, and whether each
+match is exact or source-equivalent. It never relabels an old runtime as a new
+deployment. Both actual identities are checked again after health/page probes.
+A healthy old release with changed app source, a divergent/newer commit,
+generic SPA HTML at the JSON path, missing revision, redirect or malformed
+response is not a successful verification. Responses and provider
 error bodies are never printed. GitHub authorization is sent only to the fixed
 GitHub API origin, never to the production endpoints.
 
@@ -99,7 +110,7 @@ Both public identity responses use `Cache-Control: no-store`.
 
 Run `node --test scripts/verify-deployment.test.mjs` using Node 22. CI includes
 this dependency-free suite. Fixtures cover stale releases, superseded commits,
-failed/fork/PR CI, warming readiness, missing/invalid metadata, redirects/body
+failed/fork/PR CI, ancestor/tree equivalence, warming readiness, missing/invalid metadata, redirects/body
 failures, credential isolation and bounded response sizes. Identity-specific
 tests run with the frontend and backend suites. Local fixtures prove verifier
 behavior; the remote CD run proves the currently deployed provider revisions.

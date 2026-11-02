@@ -4,7 +4,7 @@ import { deploymentUrl, verifyDeployment } from './verify-deployment.mjs';
 
 const sha = 'a'.repeat(40), old = 'b'.repeat(40), repository = 'fixture/SmartHospital';
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-function fixture({ mutate, currentMain = () => sha, ci = true } = {}) {
+function fixture({ mutate, currentMain = () => sha, ci = true, sameSource = false } = {}) {
   const calls = [], logs = [];
   let clock = 0;
   const fetchImpl = async (input, options) => {
@@ -13,6 +13,20 @@ function fixture({ mutate, currentMain = () => sha, ci = true } = {}) {
     if (changed) return changed;
     if (url.hostname === 'api.github.com') {
       if (url.pathname.endsWith('/git/ref/heads/main')) return json({ object: { sha: currentMain() } });
+      if (url.pathname.includes('/compare/')) return json({ status: 'ahead', merge_base_commit: { sha: old } });
+      if (url.pathname.includes('/git/commits/')) {
+        const revision = url.pathname.split('/').at(-1);
+        return json({ sha: revision, tree: { sha: revision === sha ? 'c'.repeat(40) : 'd'.repeat(40) } });
+      }
+      if (url.pathname.includes('/git/trees/')) {
+        const isExpected = url.pathname.endsWith('c'.repeat(40));
+        const same = isExpected || sameSource;
+        return json({ sha: url.pathname.split('/').at(-1), truncated: false, tree: [
+          { path: 'sh.server', type: 'tree', sha: (same ? '1' : '2').repeat(40) },
+          { path: 'sh.client', type: 'tree', sha: (same ? '3' : '4').repeat(40) },
+          { path: 'vercel.json', type: 'blob', sha: (same ? '5' : '6').repeat(40) },
+        ] });
+      }
       return json({ workflow_runs: ci ? [{ id: 12, head_sha: sha, head_branch: 'main', event: 'push',
         conclusion: 'success', head_repository: { full_name: repository } }] : [] });
     }
@@ -35,13 +49,61 @@ test('accepts only public HTTPS targets without embedded secrets', () => {
 
 test('verifies CI and both exact release identities, without sending GitHub credentials to production', async () => {
   const f = fixture();
-  assert.deepEqual(await f.run(), { status: 'verified', revision: sha, ciRunId: 12 });
+  assert.deepEqual(await f.run(), { status: 'verified', revision: sha, ciRunId: 12,
+    backendRevision: sha, frontendRevision: sha, backendSource: 'exact', frontendSource: 'exact' });
   for (const { url, options } of f.calls) {
     assert.equal(options.redirect, 'error');
     if (url.hostname === 'api.github.com') assert.equal(options.headers.Authorization, 'Bearer fixture-github-token');
     else { assert.equal(options.headers.Authorization, undefined); assert.equal(options.cache, 'no-store'); }
   }
   assert.equal(f.calls.filter(c => c.url.pathname === '/health/version').length, 2);
+});
+
+test('accepts a prior native deployment only with proven ancestry and identical app trees/config', async () => {
+  const f = fixture({ sameSource: true, mutate: url =>
+    ['/health/version', '/deployment.json'].includes(url.pathname) ? json({ revision: old }) : undefined });
+  const result = await f.run();
+  assert.equal(result.revision, sha);
+  assert.equal(result.backendRevision, old);
+  assert.equal(result.frontendRevision, old);
+  assert.equal(result.backendSource, 'equivalent');
+  assert.equal(result.frontendSource, 'equivalent');
+  assert.equal(f.calls.filter(c => c.url.pathname.includes('/compare/')).length, 1);
+});
+
+test('rejects identical-looking source from a divergent or newer deployment', async () => {
+  for (const status of ['diverged', 'behind']) {
+    const f = fixture({ sameSource: true, mutate: url => url.pathname.includes('/compare/')
+      ? json({ status, merge_base_commit: { sha: old } })
+      : ['/health/version', '/deployment.json'].includes(url.pathname) ? json({ revision: old }) : undefined });
+    await assert.rejects(f.run(), /timed out/);
+  }
+});
+
+test('does not ignore changed root Vercel configuration when frontend source is otherwise identical', async () => {
+  const f = fixture({ sameSource: true, mutate: url => {
+    if (url.pathname === '/deployment.json') return json({ revision: old });
+    if (url.pathname.endsWith('/git/trees/' + 'd'.repeat(40))) return json({ sha: 'd'.repeat(40), truncated: false, tree: [
+      { path: 'sh.server', type: 'tree', sha: '1'.repeat(40) },
+      { path: 'sh.client', type: 'tree', sha: '3'.repeat(40) },
+      { path: 'vercel.json', type: 'blob', sha: '6'.repeat(40) },
+    ] });
+  } });
+  await assert.rejects(f.run(), /timed out/);
+});
+
+test('rejects incomplete or missing Git tree evidence for an ancestor deployment', async () => {
+  for (const data of [
+    { sha: 'c'.repeat(40), truncated: true, tree: [] },
+    { sha: 'c'.repeat(40), truncated: false, tree: [] },
+    { sha: 'e'.repeat(40), truncated: false, tree: [] },
+  ]) {
+    const f = fixture({ sameSource: true, mutate: url => {
+      if (['/health/version', '/deployment.json'].includes(url.pathname)) return json({ revision: old });
+      if (url.pathname.endsWith('/git/trees/' + 'c'.repeat(40))) return json(data);
+    } });
+    await assert.rejects(f.run(), /Cannot verify application source identity/);
+  }
 });
 
 test('refuses production probes when there is no passing main-push CI for that SHA', async () => {
@@ -59,7 +121,7 @@ test('ignores fork/PR CI and a passing CI on another revision', async () => {
   }
 });
 
-test('does not mistake a healthy older backend/frontend for the tested release', async () => {
+test('does not mistake a healthy older backend/frontend with changed app source for the tested release', async () => {
   for (const path of ['/health/version', '/deployment.json']) {
     const f = fixture({ mutate: url => url.pathname === path ? json({ revision: old }) : undefined });
     await assert.rejects(f.run(), /timed out/);
