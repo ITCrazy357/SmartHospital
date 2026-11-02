@@ -1,27 +1,18 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Search, MapPin, SlidersHorizontal, ChevronLeft, ChevronRight, ChevronDown, X } from 'lucide-react';
-import { DEPARTMENTS, getDepartmentListFromApi } from '../constants';
+import { getDepartmentListFromApi } from '../constants';
 import { DoctorCard } from './DoctorCard';
 import { DoctorCardSkeleton } from './DoctorCardSkeleton';
 import { Doctor } from '../types';
-import { Department } from '../types';
-import { api, type ApiAppointmentSlot } from '../api/client';
+import { api } from '../api/client';
 import { mapDoctor } from '../api/mappers';
 import { getPage, getDepartmentId, getSearchQuery, replaceSearchParams } from '../utils/urlSearchParams';
 import { isUuid } from '../utils/isUuid';
-import { slotInCurrentCalendarWeek, slotOnLocalDay } from '../utils/doctorAvailabilityFilter';
+import { searchDoctors } from '../api/doctor-search';
 import { expandDoctorSearchAbbreviations } from '../utils/doctorSearchQuery';
-import { buildDoctorCountByDepartment } from '../utils/departmentDoctorCounts';
+
 
 const PAGE_SIZE = 5;
-
-function startOfTodayISO(): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString();
-}
-
-type SlotAvailMeta = { hasToday: boolean; hasTomorrow: boolean; hasWeek: boolean };
 
 interface DoctorSearchProps {
   onBook: (doctor: Doctor) => void;
@@ -30,7 +21,10 @@ interface DoctorSearchProps {
 
 export const DoctorSearch: React.FC<DoctorSearchProps> = ({ onBook, onViewProfile }) => {
   const [searchQuery, setSearchQuery] = useState(() => getSearchQuery());
-  const [departments, setDepartments] = useState<Department[]>(DEPARTMENTS);
+  const [departmentData,setDepartmentData]=useState<{id:string;name:string}[]>([]);
+  const [departmentCounts,setDepartmentCounts]=useState<Record<string,number>>({});
+  const departments=useMemo(()=>getDepartmentListFromApi(departmentData,{doctorCountByDeptId:departmentCounts}),[departmentData,departmentCounts]);
+  const [totalItems,setTotalItems]=useState(0);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(() => {
     const id = getDepartmentId();
     return id && isUuid(id) ? id : null;
@@ -47,8 +41,7 @@ export const DoctorSearch: React.FC<DoctorSearchProps> = ({ onBook, onViewProfil
   const [filterExp5_10, setFilterExp5_10] = useState(false);
   const [filterExp10, setFilterExp10] = useState(false);
 
-  const [slotMeta, setSlotMeta] = useState<Record<string, SlotAvailMeta> | null>(null);
-  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const availabilityLoading=loading;
 
   const [deptQuery, setDeptQuery] = useState('');
   const [deptOpen, setDeptOpen] = useState(false);
@@ -94,166 +87,39 @@ export const DoctorSearch: React.FC<DoctorSearchProps> = ({ onBook, onViewProfil
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const [apiDepts, allDoctors] = await Promise.all([
-          api.getDepartments(),
-          api.getDoctors(),
-        ]);
-        if (!cancelled) {
-          const counts = buildDoctorCountByDepartment(apiDepts, allDoctors);
-          setDepartments(getDepartmentListFromApi(apiDepts, { doctorCountByDeptId: counts }));
-          setDeptsLoading(false);
-        }
-      } catch {
-        if (!cancelled) setDepartments(DEPARTMENTS);
-        if (!cancelled) setDeptsLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+    let cancelled=false;
+    api.getDepartments().then(list=>{if(!cancelled)setDepartmentData(list);})
+      .catch(()=>{if(!cancelled)setDepartmentData([]);})
+      .finally(()=>{if(!cancelled)setDeptsLoading(false);});
+    return()=>{cancelled=true;};
+  },[]);
 
-  /** Xóa departmentId không phải UUID khỏi URL (bookmark / dữ liệu fallback cũ). */
-  useEffect(() => {
-    const id = getDepartmentId();
-    if (id && !isUuid(id)) {
-      replaceSearchParams({ departmentId: null });
-    }
-  }, []);
+  const filterKey=JSON.stringify([searchQuery,selectedDepartmentId,filterExp1_5,filterExp5_10,filterExp10,filterAvailToday,filterAvailTomorrow,filterAvailWeek]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    const deptParam =
-      selectedDepartmentId && isUuid(selectedDepartmentId) ? selectedDepartmentId : undefined;
-    api.getDoctors(deptParam)
-      .then((list) => {
-        if (!cancelled) setDoctors(list.map(mapDoctor));
-      })
-      .catch((e) => {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : 'Không tải được danh sách bác sĩ');
-          setDoctors([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [selectedDepartmentId]);
 
-  useEffect(() => {
-    if (!needAvailLookup || doctors.length === 0) {
-      setSlotMeta(null);
-      setAvailabilityLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setAvailabilityLoading(true);
-    const ref = new Date();
-    const from = startOfTodayISO();
-    (async () => {
-      const rows = await Promise.all(
-        doctors.map(async (d) => {
-          try {
-            const slots = await api.getDoctorSlots(d.id, from);
-            return { id: d.id, slots };
-          } catch {
-            return { id: d.id, slots: [] as ApiAppointmentSlot[] };
-          }
-        }),
-      );
-      if (cancelled) return;
-      const meta: Record<string, SlotAvailMeta> = {};
-      for (const { id, slots } of rows) {
-        const available = slots.filter(
-          (s) =>
-            s.status === 'available' && new Date(s.slotTime).getTime() > Date.now(),
-        );
-        meta[id] = {
-          hasToday: available.some((s) => slotOnLocalDay(s.slotTime, ref, 0)),
-          hasTomorrow: available.some((s) => slotOnLocalDay(s.slotTime, ref, 1)),
-          hasWeek: available.some((s) => slotInCurrentCalendarWeek(s.slotTime, ref)),
-        };
-      }
-      setSlotMeta(meta);
-      setAvailabilityLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [doctors, needAvailLookup]);
+  useEffect(()=>{
+    let cancelled=false;
+    setLoading(true);setError(null);
+    const timer=setTimeout(()=>{
+      searchDoctors({page,pageSize:PAGE_SIZE,q:expandDoctorSearchAbbreviations(searchQuery),departmentId:selectedDepartmentId??undefined,
+        experience:[filterExp1_5?'1-5':'',filterExp5_10?'5-10':'',filterExp10?'10+':''].filter(Boolean),
+        availability:[filterAvailToday?'today':'',filterAvailTomorrow?'tomorrow':'',filterAvailWeek?'week':''].filter(Boolean)})
+      .then(result=>{
+        if(cancelled)return;
+        const lastPage=Math.max(1,Math.ceil(result.total/PAGE_SIZE));
+        setTotalItems(result.total);setDepartmentCounts(result.departmentCounts);
+        if(page>lastPage){setPage(lastPage);replaceSearchParams({page:lastPage});return;}
+        setDoctors(result.items.map(mapDoctor));
+      }).catch(e=>{if(!cancelled){setError(e instanceof Error?e.message:'Không tải được danh sách bác sĩ');setDoctors([]);setTotalItems(0);}})
+      .finally(()=>{if(!cancelled)setLoading(false);});
+    },200);
+    return()=>{cancelled=true;clearTimeout(timer);};
+  },[page,filterKey]);
 
-  const filteredDoctors = useMemo(() => {
-    let list = doctors;
-
-    const rawTrim = searchQuery.trim().toLowerCase();
-    const expanded = expandDoctorSearchAbbreviations(searchQuery).trim();
-    const expTrim = expanded.toLowerCase();
-    const isOnlyDoctorShorthand =
-      rawTrim === 'bs' || expTrim === 'bác sĩ';
-
-    if (expanded && !isOnlyDoctorShorthand) {
-      const q = expTrim;
-      list = list.filter(
-        (d) =>
-          d.name.toLowerCase().includes(q) ||
-          d.specialty.toLowerCase().includes(q),
-      );
-    }
-
-    const anyExp = filterExp1_5 || filterExp5_10 || filterExp10;
-    if (anyExp) {
-      list = list.filter((d) => {
-        const y = d.experience;
-        const in1_5 = y >= 1 && y <= 5;
-        const in5_10 = y > 5 && y <= 10;
-        const in10 = y > 10;
-        return (
-          (filterExp1_5 && in1_5) ||
-          (filterExp5_10 && in5_10) ||
-          (filterExp10 && in10)
-        );
-      });
-    }
-
-    if (needAvailLookup && !availabilityLoading && slotMeta) {
-      list = list.filter((d) => {
-        const m = slotMeta[d.id];
-        if (!m) return false;
-        return (
-          (filterAvailToday && m.hasToday) ||
-          (filterAvailTomorrow && m.hasTomorrow) ||
-          (filterAvailWeek && m.hasWeek)
-        );
-      });
-    }
-
-    return list;
-  }, [
-    doctors,
-    searchQuery,
-    filterExp1_5,
-    filterExp5_10,
-    filterExp10,
-    needAvailLookup,
-    filterAvailToday,
-    filterAvailTomorrow,
-    filterAvailWeek,
-    availabilityLoading,
-    slotMeta,
-  ]);
-
-  const totalItems = filteredDoctors.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
-  const safePage = Math.min(Math.max(1, page), totalPages);
-  const paginatedDoctors = useMemo(
-    () => filteredDoctors.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
-    [filteredDoctors, safePage],
-  );
-
+  const filteredDoctors=doctors;
+  const totalPages=Math.max(1,Math.ceil(totalItems/PAGE_SIZE));
+  const safePage=Math.min(Math.max(1,page),totalPages);
+  const paginatedDoctors=doctors;
   const selectedDeptName = selectedDepartmentId
     ? departments.find((d) => d.id === selectedDepartmentId)?.name ?? null
     : null;
@@ -283,8 +149,8 @@ export const DoctorSearch: React.FC<DoctorSearchProps> = ({ onBook, onViewProfil
     setFilterExp1_5(false);
     setFilterExp5_10(false);
     setFilterExp10(false);
-    setSlotMeta(null);
-    setAvailabilityLoading(false);
+
+
     replaceSearchParams({
       view: 'search',
       page: 1,
@@ -403,7 +269,7 @@ export const DoctorSearch: React.FC<DoctorSearchProps> = ({ onBook, onViewProfil
             <div className="space-y-4">
               <h3 className="text-sm font-bold text-slate-900">Lịch trống</h3>
               <p className="text-xs text-slate-500">
-                Dựa trên slot còn trống (API). Có thể mất vài giây khi danh sách dài.
+                Lịch còn trống được kiểm tra theo giờ Việt Nam.
               </p>
               {availabilityLoading && needAvailLookup && (
                 <p className="text-xs font-medium text-primary">Đang kiểm tra lịch…</p>
@@ -414,7 +280,7 @@ export const DoctorSearch: React.FC<DoctorSearchProps> = ({ onBook, onViewProfil
                     type="checkbox"
                     className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
                     checked={filterAvailToday}
-                    onChange={(e) => setFilterAvailToday(e.target.checked)}
+                    onChange={(e) => { setFilterAvailToday(e.target.checked); setPage(1); replaceSearchParams({page:1}); }}
                   />
                   <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">
                     Bác sĩ còn lịch hôm nay
@@ -425,7 +291,7 @@ export const DoctorSearch: React.FC<DoctorSearchProps> = ({ onBook, onViewProfil
                     type="checkbox"
                     className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
                     checked={filterAvailTomorrow}
-                    onChange={(e) => setFilterAvailTomorrow(e.target.checked)}
+                    onChange={(e) => { setFilterAvailTomorrow(e.target.checked); setPage(1); replaceSearchParams({page:1}); }}
                   />
                   <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">
                     Còn lịch ngày mai
@@ -436,7 +302,7 @@ export const DoctorSearch: React.FC<DoctorSearchProps> = ({ onBook, onViewProfil
                     type="checkbox"
                     className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
                     checked={filterAvailWeek}
-                    onChange={(e) => setFilterAvailWeek(e.target.checked)}
+                    onChange={(e) => { setFilterAvailWeek(e.target.checked); setPage(1); replaceSearchParams({page:1}); }}
                   />
                   <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">
                     Còn lịch tuần này
@@ -453,7 +319,7 @@ export const DoctorSearch: React.FC<DoctorSearchProps> = ({ onBook, onViewProfil
                     type="checkbox"
                     className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
                     checked={filterExp1_5}
-                    onChange={(e) => setFilterExp1_5(e.target.checked)}
+                    onChange={(e) => { setFilterExp1_5(e.target.checked); setPage(1); replaceSearchParams({page:1}); }}
                   />
                   <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">
                     1–5 năm
@@ -464,7 +330,7 @@ export const DoctorSearch: React.FC<DoctorSearchProps> = ({ onBook, onViewProfil
                     type="checkbox"
                     className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
                     checked={filterExp5_10}
-                    onChange={(e) => setFilterExp5_10(e.target.checked)}
+                    onChange={(e) => { setFilterExp5_10(e.target.checked); setPage(1); replaceSearchParams({page:1}); }}
                   />
                   <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">
                     5–10 năm
@@ -475,7 +341,7 @@ export const DoctorSearch: React.FC<DoctorSearchProps> = ({ onBook, onViewProfil
                     type="checkbox"
                     className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
                     checked={filterExp10}
-                    onChange={(e) => setFilterExp10(e.target.checked)}
+                    onChange={(e) => { setFilterExp10(e.target.checked); setPage(1); replaceSearchParams({page:1}); }}
                   />
                   <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">
                     Trên 10 năm
@@ -485,16 +351,6 @@ export const DoctorSearch: React.FC<DoctorSearchProps> = ({ onBook, onViewProfil
             </div>
           </div>
 
-          <div className="bg-primary rounded-2xl p-6 text-white relative overflow-hidden">
-            <div className="relative z-10 space-y-4">
-              <h3 className="font-bold text-lg leading-tight">Giảm 20% cho lần khám đầu!</h3>
-              <p className="text-xs text-primary-foreground/80">Mã: MEDI20</p>
-              <button type="button" className="w-full py-2 bg-white text-primary rounded-xl font-bold text-sm">
-                Áp dụng
-              </button>
-            </div>
-            <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-white/10 rounded-full blur-2xl" />
-          </div>
         </aside>
 
         <main className="flex-1 space-y-8">
@@ -510,8 +366,9 @@ export const DoctorSearch: React.FC<DoctorSearchProps> = ({ onBook, onViewProfil
                 onChange={(e) => {
                   const v = e.target.value;
                   setSearchQuery(v);
+                  setPage(1);
                   const t = v.trim();
-                  replaceSearchParams({ q: t ? t : null });
+                  replaceSearchParams({ q: t ? t : null, page:1 });
                 }}
               />
             </div>
@@ -565,7 +422,7 @@ export const DoctorSearch: React.FC<DoctorSearchProps> = ({ onBook, onViewProfil
                     Trước
                   </button>
                   <div className="flex items-center gap-1">
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                    {Array.from({ length: Math.min(7,totalPages) }, (_, i) => Math.max(1,Math.min(safePage-3,totalPages-6))+i).map((p) => (
                       <button
                         key={p}
                         type="button"

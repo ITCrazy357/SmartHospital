@@ -2,6 +2,7 @@ import {
   Injectable,
   ForbiddenException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -12,6 +13,15 @@ import { AppointmentEntity } from '../models/appointment.model';
 import { AppointmentStatus } from '../models/enums';
 import { sqlSlotNotInLunchBreak } from '../common/doctor-slot-hours';
 import { publicDoctor, type PublicDoctorDto } from './public-doctor.dto';
+import { isUuid } from '../common/is-uuid';
+
+export interface DoctorSearchResult {
+  items: PublicDoctorDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+  departmentCounts: Record<string, number>;
+}
 
 /** GET /doctor/me/patients — bệnh nhân từng đặt lịch với bác sĩ. */
 export interface DoctorPatientDto {
@@ -59,6 +69,56 @@ export class DoctorsService {
     @InjectRepository(AppointmentEntity)
     private readonly appointmentRepo: Repository<AppointmentEntity>,
   ) {}
+
+  async search(input: Record<string, unknown>): Promise<DoctorSearchResult> {
+    const page = Number(input.page ?? 1), pageSize = Number(input.pageSize ?? 5);
+    if (!Number.isInteger(page) || page < 1 || page > 100000 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 50)
+      throw new BadRequestException('Trang và số bác sĩ mỗi trang không hợp lệ');
+    if (input.q !== undefined && (typeof input.q !== 'string' || input.q.length > 120)) throw new BadRequestException('Từ khóa tối đa 120 ký tự');
+    const departmentId = typeof input.departmentId === 'string' ? input.departmentId.trim() : undefined;
+    if (input.departmentId !== undefined && (!departmentId || !isUuid(departmentId))) throw new BadRequestException('departmentId phải là UUID');
+    const parseList = (raw: unknown, allowed: string[], field: string): string[] => {
+      if (raw === undefined || raw === '') return [];
+      if (typeof raw !== 'string') throw new BadRequestException(`${field} không hợp lệ`);
+      const values = [...new Set(raw.split(','))];
+      if (values.some(x => !allowed.includes(x))) throw new BadRequestException(`${field} không hợp lệ`);
+      return values;
+    };
+    const experience = parseList(input.experience, ['1-5', '5-10', '10+'], 'Kinh nghiệm');
+    const availability = parseList(input.availability, ['today', 'tomorrow', 'week'], 'Lịch trống');
+    const qb = this.userRepo.createQueryBuilder('u').leftJoinAndSelect('u.department', 'department')
+      .where("u.role='doctor'").andWhere('u.isLocked=false');
+    if (departmentId) qb.andWhere('u.departmentId=:departmentId', { departmentId });
+    // The title is presentation metadata; accepting its shorthand must not require
+    // storing "Bác sĩ" as part of a clinician's legal name.
+    const q = (input.q as string | undefined)?.trim().replace(/^(?:bs\.?|bác sĩ)(?:\s+|$)/iu, '').trim();
+    if (q) qb.andWhere("(u.fullName ILIKE :query ESCAPE '\\' OR department.name ILIKE :query ESCAPE '\\')",
+      { query: `%${q.replace(/[\\%_]/g, '\\$&')}%` });
+    const experienceSql: Record<string, string> = {
+      '1-5': 'u.experienceYears BETWEEN 1 AND 5', '5-10': 'u.experienceYears > 5 AND u.experienceYears <= 10', '10+': 'u.experienceYears > 10',
+    };
+    if (experience.length) qb.andWhere(`(${experience.map(x => `(${experienceSql[x]})`).join(' OR ')})`);
+    if (availability.length) {
+      const today = "date_trunc('day', now() AT TIME ZONE 'Asia/Ho_Chi_Minh')";
+      const week = "date_trunc('week', now() AT TIME ZONE 'Asia/Ho_Chi_Minh')";
+      const ranges: Record<string, string> = {
+        today: `s.slot_time >= ${today} AND s.slot_time < ${today}+interval '1 day'`,
+        tomorrow: `s.slot_time >= ${today}+interval '1 day' AND s.slot_time < ${today}+interval '2 days'`,
+        week: `s.slot_time >= ${week} AND s.slot_time < ${week}+interval '7 days'`,
+      };
+      qb.andWhere(`EXISTS(SELECT 1 FROM appointment_slots s WHERE s.doctor_id=u.id AND s.status='available'
+        AND s.slot_time > now() AT TIME ZONE 'Asia/Ho_Chi_Minh' AND ${sqlSlotNotInLunchBreak('s')}
+        AND (${availability.map(x => `(${ranges[x]})`).join(' OR ')})
+        AND NOT EXISTS(SELECT 1 FROM doctor_leave_requests l WHERE l.doctor_id=u.id AND l.status='approved' AND s.slot_time::date BETWEEN l.start_date AND l.end_date)
+        AND NOT EXISTS(SELECT 1 FROM doctor_schedule_exceptions e WHERE e.doctor_id=u.id AND e.closed AND e.work_date=s.slot_time::date))`);
+    }
+    const [items, total] = await qb.orderBy('u.fullName', 'ASC').addOrderBy('u.id', 'ASC')
+      .skip((page - 1) * pageSize).take(pageSize).getManyAndCount();
+    const counts: { department_id: string; count: number }[] = await this.userRepo.manager.query(`SELECT department_id, COUNT(*)::int AS count
+      FROM users WHERE role='doctor' AND NOT is_locked AND department_id IS NOT NULL GROUP BY department_id`);
+    return { items: items.map(publicDoctor), total, page, pageSize,
+      departmentCounts: Object.fromEntries(counts.map(r => [r.department_id, r.count])) };
+  }
 
   async findAll(departmentId?: string): Promise<PublicDoctorDto[]> {
     const qb = this.userRepo

@@ -17,6 +17,11 @@ import type { AppointmentSlotEntity } from '../models/appointment-slot.model';
 export class DoctorsController {
   constructor(private readonly doctorsService: DoctorsService) {}
 
+  @Get('search')
+  search(@Query() query: Record<string, unknown>) {
+    return this.doctorsService.search(query);
+  }
+
   @Get()
   async findAll(
     @Query('departmentId') departmentId?: string,

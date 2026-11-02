@@ -70,9 +70,13 @@ export class DoctorChatSessionsService {
     // Lấy 1 user message cuối mỗi session để preview ở sidebar.
     const lastUserMessages = await this.messageRepo
       .createQueryBuilder('m')
+      .distinctOn(['m.sessionId'])
+      .select(['m.sessionId', 'm.content'])
       .where('m.session_id IN (:...ids)', { ids: sessionIds })
       .andWhere(`m.role = 'user'`)
-      .orderBy('m.created_at', 'DESC')
+      .orderBy('m.sessionId', 'ASC')
+      .addOrderBy('m.createdAt', 'DESC')
+      .addOrderBy('m.id', 'DESC')
       .getMany();
     const lastUserMap = new Map<string, string>();
     for (const m of lastUserMessages) {
