@@ -3,6 +3,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AiUsageEntity } from '../models/ai-usage.model';
 import { OpenAIService } from './openai.service';
 import { AnonymizeService } from './anonymize.service';
+import { AuthModule } from '../auth/auth.module';
+import { RequestLimitModule } from '../common/rate-limit.module';
+import { AiPolicyService } from './ai-policy.service';
+import { AiPolicyController } from './ai-policy.controller';
 
 /**
  * Module hạ tầng AI dùng chung cho mọi tính năng AI:
@@ -13,8 +17,9 @@ import { AnonymizeService } from './anonymize.service';
  * để tái sử dụng client + policy chống leak PII.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([AiUsageEntity])],
-  providers: [OpenAIService, AnonymizeService],
-  exports: [OpenAIService, AnonymizeService],
+  imports: [TypeOrmModule.forFeature([AiUsageEntity]), AuthModule, RequestLimitModule],
+  controllers: [AiPolicyController],
+  providers: [OpenAIService, AnonymizeService, AiPolicyService],
+  exports: [OpenAIService, AnonymizeService, AiPolicyService],
 })
 export class AiModule {}

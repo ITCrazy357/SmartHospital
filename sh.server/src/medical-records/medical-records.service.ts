@@ -11,12 +11,14 @@ import { DataSource, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { MedicalRecordEntity } from '../models/medical-record.model';
 import { AppointmentEntity } from '../models/appointment.model';
+import { AppointmentSlotEntity } from '../models/appointment-slot.model';
+import { lockDoctor } from '../common/doctor-lock';
 import { UserEntity, type UserPublic } from '../models/user.model';
 import { AppointmentStatus } from '../models/enums';
 import { MedicalRecordEmbeddingsService } from './medical-record-embeddings.service';
 
 export type DoctorPendingMedicalAppointmentDto = {
-  id: string;
+  id: string; version?: number;
   patientId: string;
   patientName: string;
   patientEmail: string;
@@ -28,7 +30,7 @@ export type DoctorPendingMedicalAppointmentDto = {
 
 export type CreateMedicalRecordResultDto = {
   record: {
-    id: string;
+    id: string; version?: number;
     patientId: string;
     doctorId: string;
     appointmentId: string | null;
@@ -42,7 +44,7 @@ export type CreateMedicalRecordResultDto = {
 };
 
 export type DoctorMedicalRecordListItemDto = {
-  id: string;
+  id: string; version?: number;
   patientId: string;
   patientName: string;
   patientEmail: string;
@@ -58,11 +60,11 @@ export type DoctorMedicalRecordListItemDto = {
 
 /** Hồ sơ khám hiển thị cho bệnh nhân (chính chủ). */
 export type PatientMedicalRecordDto = {
-  id: string;
+  id: string; version?: number;
   appointmentId: string | null;
   slotTime: string | null;
   doctor: {
-    id: string;
+    id: string; version?: number;
     fullName: string;
     avatarUrl: string | null;
     departmentName: string | null;
@@ -112,6 +114,7 @@ export class MedicalRecordsService {
       .leftJoin('medical_records', 'mr', 'mr.appointment_id = a.id')
       .where('a.doctorId = :doctorId', { doctorId })
       .andWhere('mr.id IS NULL')
+      .andWhere("EXISTS (SELECT 1 FROM clinic_visits cv WHERE cv.appointment_id=a.id AND cv.status IN ('checked_in','in_consultation'))")
       .andWhere('slot.slotTime <= :now', { now })
       .andWhere(
         `(a.status IN (:...stOk) OR (a.status = :pending AND EXISTS (
@@ -164,48 +167,32 @@ export class MedicalRecordsService {
       throw new BadRequestException('Nhập ít nhất một trong: triệu chứng, chẩn đoán, điều trị, ghi chú');
     }
 
-    const existing = await this.recordRepo.findOne({ where: { appointmentId } });
-    if (existing) throw new ConflictException('Lịch hẹn này đã có hồ sơ khám');
-
-    const appointment = await this.appointmentRepo.findOne({
-      where: { id: appointmentId },
-      relations: ['slot', 'user'],
+    const saved = await this.dataSource.transaction(async (em) => {
+      await lockDoctor(em, doctorId);
+      const appointment = await em.findOne(AppointmentEntity, {
+        where: { id: appointmentId }, lock: { mode: 'pessimistic_write' },
+      });
+      if (!appointment) throw new NotFoundException('Không tìm thấy lịch hẹn');
+      if (appointment.doctorId !== doctorId) throw new ForbiddenException('Không phải lịch của bạn');
+      const existing = await em.findOne(MedicalRecordEntity, { where: { appointmentId } });
+      if (existing) throw new ConflictException('Lịch hẹn đã có hồ sơ; vui lòng tải lại');
+      if (appointment.status !== AppointmentStatus.Confirmed) throw new ConflictException('Lịch chưa được xác nhận hoặc đã kết thúc');
+      const visit = await em.query(`SELECT id FROM clinic_visits WHERE appointment_id=$1
+        AND status IN ('checked_in','in_consultation') FOR UPDATE`, [appointmentId]);
+      if (!visit.length) throw new ConflictException('Bệnh nhân chưa được tiếp đón; không thể coi ca vắng là đã khám');
+      const slot = appointment.slotId ? await em.findOne(AppointmentSlotEntity, { where: { id: appointment.slotId } }) : null;
+      if (!slot || new Date(slot.slotTime).getTime() > Date.now()) throw new BadRequestException('Chưa đến ca khám');
+      const record = await em.save(MedicalRecordEntity, {
+        patientId: appointment.userId, doctorId, appointmentId, symptoms, diagnosis, treatment, notes,
+        version: 1, embeddingStatus: 'pending',
+      });
+      appointment.status = AppointmentStatus.Completed;
+      await em.save(appointment);
+      await em.query("UPDATE clinic_visits SET status='completed', version=version+1, updated_at=now() WHERE appointment_id=$1", [appointmentId]);
+      await em.query(`INSERT INTO medical_record_revisions(record_id,version,actor_id,reason,snapshot)
+        VALUES($1,1,$2,'Tạo hồ sơ',$3)`, [record.id, doctorId, JSON.stringify(record)]);
+      return record;
     });
-    if (!appointment) throw new NotFoundException('Không tìm thấy lịch hẹn');
-    if (appointment.doctorId !== doctorId) throw new ForbiddenException('Không phải lịch của bạn');
-
-    const slot = appointment.slot;
-    if (!slot) throw new BadRequestException('Lịch hẹn không gắn ca khám');
-    if (new Date(slot.slotTime) > new Date()) {
-      throw new BadRequestException('Chưa đến giờ ca khám; chỉ nhập hồ sơ sau khi ca đã qua');
-    }
-
-    const paidOrOk =
-      appointment.status === AppointmentStatus.Confirmed ||
-      appointment.status === AppointmentStatus.Completed ||
-      (appointment.status === AppointmentStatus.Pending &&
-        (await this.dataSource.query(
-          `SELECT 1 FROM payments WHERE appointment_id = $1 AND status = 'paid' LIMIT 1`,
-          [appointmentId],
-        ))?.length > 0);
-
-    if (!paidOrOk) {
-      throw new BadRequestException('Lịch chưa được xác nhận thanh toán cọc hoặc chưa xác nhận');
-    }
-
-    const record = this.recordRepo.create({
-      patientId: appointment.userId,
-      doctorId,
-      appointmentId,
-      symptoms,
-      diagnosis,
-      treatment,
-      notes,
-    });
-    const saved = await this.recordRepo.save(record);
-
-    appointment.status = AppointmentStatus.Completed;
-    await this.appointmentRepo.save(appointment);
 
     let embeddingStored = false;
     try {
@@ -216,7 +203,7 @@ export class MedicalRecordsService {
 
     return {
       record: {
-        id: saved.id,
+        id: saved.id, version: saved.version,
         patientId: saved.patientId,
         doctorId: saved.doctorId,
         appointmentId: saved.appointmentId,
@@ -393,7 +380,7 @@ export class MedicalRecordsService {
     const slot = r.appointment?.slot;
     const slotTime = slot?.slotTime ? new Date(slot.slotTime).toISOString() : null;
     return {
-      id: r.id,
+      id: r.id, version: r.version,
       appointmentId: r.appointmentId,
       slotTime,
       doctor: doctor
@@ -442,7 +429,7 @@ export class MedicalRecordsService {
     const slot = r.appointment?.slot;
     const slotTime = slot?.slotTime ? new Date(slot.slotTime).toISOString() : null;
     return {
-      id: r.id,
+      id: r.id, version: r.version,
       patientId: r.patientId,
       patientName: patient?.fullName ?? '',
       patientEmail: patient?.email ?? '',
@@ -461,32 +448,38 @@ export class MedicalRecordsService {
     doctorId: string,
     recordId: string,
     body: {
-      symptoms?: string | null;
+      version?: number; reason?: string; symptoms?: string | null;
       diagnosis?: string | null;
       treatment?: string | null;
       notes?: string | null;
     },
   ): Promise<CreateMedicalRecordResultDto> {
-    const record = await this.recordRepo.findOne({ where: { id: recordId, doctorId } });
-    if (!record) {
-      throw new NotFoundException('Không tìm thấy hồ sơ hoặc không thuộc bạn');
-    }
-
-    const symptoms = body.symptoms !== undefined ? (body.symptoms?.trim() || null) : record.symptoms;
-    const diagnosis = body.diagnosis !== undefined ? (body.diagnosis?.trim() || null) : record.diagnosis;
-    const treatment = body.treatment !== undefined ? (body.treatment?.trim() || null) : record.treatment;
-    const notes = body.notes !== undefined ? (body.notes?.trim() || null) : record.notes;
-
-    const hasContent = [symptoms, diagnosis, treatment, notes].some((x) => x && x.length > 0);
-    if (!hasContent) {
-      throw new BadRequestException('Nhập ít nhất một trong: triệu chứng, chẩn đoán, điều trị, ghi chú');
-    }
-
-    record.symptoms = symptoms;
-    record.diagnosis = diagnosis;
-    record.treatment = treatment;
-    record.notes = notes;
-    const saved = await this.recordRepo.save(record);
+    if (!Number.isInteger(body.version) || !body.reason?.trim())
+      throw new BadRequestException('Cần phiên bản hồ sơ và lý do chỉnh sửa');
+    const saved = await this.dataSource.transaction(async em => {
+      await lockDoctor(em, doctorId);
+      const record = await em.findOne(MedicalRecordEntity, { where: { id: recordId, doctorId }, lock: { mode: 'pessimistic_write' } });
+      if (!record) throw new NotFoundException('Không tìm thấy hồ sơ hoặc không thuộc bạn');
+      const structured=await em.query(`SELECT 1 FROM clinic_encounters e JOIN clinic_visits v ON v.id=e.visit_id
+        WHERE v.appointment_id=$1 AND e.status='final'`,[record.appointmentId]);
+      if(structured.length)throw new ConflictException('Hồ sơ có cấu trúc: mở ca khám trong Phòng khám để sửa và giữ đầy đủ lịch sử');
+      if (record.version !== body.version) throw new ConflictException('Hồ sơ đã thay đổi; tải lại trước khi sửa');
+      for (const key of ['symptoms','diagnosis','treatment','notes'] as const) {
+        const value = body[key];
+        if (value !== undefined) {
+          if (value !== null && (typeof value !== 'string' || value.length > 10000)) throw new BadRequestException('Nội dung không hợp lệ');
+          record[key] = value?.trim() || null;
+        }
+      }
+      if (![record.symptoms,record.diagnosis,record.treatment,record.notes].some(Boolean)) throw new BadRequestException('Hồ sơ không được rỗng');
+      record.version++; record.updatedAt=new Date(); record.embeddingStatus='pending';
+      const updated=await em.save(record);
+      await em.query(`INSERT INTO medical_record_revisions(record_id,version,actor_id,reason,snapshot) VALUES($1,$2,$3,$4,$5)`,
+        [recordId,updated.version,doctorId,body.reason!.trim().slice(0,1000),JSON.stringify(updated)]);
+      // Old embeddings must not remain searchable after an edit until refreshed.
+      await em.query('DELETE FROM medical_record_embeddings WHERE record_id=$1',[recordId]);
+      return updated;
+    });
 
     let embeddingStored = false;
     try {
@@ -497,7 +490,7 @@ export class MedicalRecordsService {
 
     return {
       record: {
-        id: saved.id,
+        id: saved.id, version: saved.version,
         patientId: saved.patientId,
         doctorId: saved.doctorId,
         appointmentId: saved.appointmentId,
@@ -520,6 +513,13 @@ export class MedicalRecordsService {
       role: u.role,
       avatarUrl: u.avatarUrl ?? null,
     };
+  }
+
+  async revisionsForDoctor(doctorId:string,recordId:string){
+    const record=await this.recordRepo.findOne({where:{id:recordId,doctorId}});
+    if(!record)throw new NotFoundException('Không tìm thấy hồ sơ hoặc không thuộc bạn');
+    return this.dataSource.query(`SELECT r.version,r.reason,r.snapshot,r.created_at,u.full_name AS actor_name
+      FROM medical_record_revisions r JOIN users u ON u.id=r.actor_id WHERE r.record_id=$1 ORDER BY r.version DESC LIMIT 100`,[recordId]);
   }
 
 }

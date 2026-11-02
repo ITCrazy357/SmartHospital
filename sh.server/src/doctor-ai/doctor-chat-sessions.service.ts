@@ -183,6 +183,11 @@ export class DoctorChatSessionsService {
     };
   }
 
+  /** Authorize a turn before any quota reservation or external model request. */
+  async assertOwnedSession(doctorId: string, sessionId: string): Promise<void> {
+    await this.assertOwn(doctorId, sessionId);
+  }
+
   private async assertOwn(
     doctorId: string,
     sessionId: string,

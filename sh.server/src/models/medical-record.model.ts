@@ -4,6 +4,15 @@ import { AppointmentEntity } from './appointment.model';
 
 @Entity('medical_records')
 export class MedicalRecordEntity {
+  @Column({ type: 'integer', default: 1 })
+  version: number;
+
+  @Column({ name: 'updated_at', type: 'timestamptz', default: () => 'now()' })
+  updatedAt: Date;
+
+  @Column({ name: 'embedding_status', type: 'varchar', default: 'pending' })
+  embeddingStatus: string;
+
   @PrimaryGeneratedColumn('uuid')
   id: string;
 

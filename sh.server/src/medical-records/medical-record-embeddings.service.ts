@@ -1,8 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { OpenAIService } from '../ai/openai.service';
 import { AnonymizeService } from '../ai/anonymize.service';
+import { AiPolicyService, AI_POLICY_VERSION } from '../ai/ai-policy.service';
 import { MedicalRecordEntity } from '../models/medical-record.model';
 import { UserEntity } from '../models/user.model';
 
@@ -27,6 +29,7 @@ export class MedicalRecordEmbeddingsService {
     private readonly userRepo: Repository<UserEntity>,
     private readonly openai: OpenAIService,
     private readonly anonymize: AnonymizeService,
+    private readonly policy: AiPolicyService,
   ) {}
 
   /** Build text mô tả cho 1 record (chỉ giữ medical info có ý nghĩa). */
@@ -50,6 +53,7 @@ export class MedicalRecordEmbeddingsService {
 
     const record = await this.recordRepo.findOne({ where: { id: recordId } });
     if (!record) return false;
+    if (!await this.policy.allows(record.doctorId) || !await this.policy.hasConsent(record.patientId)) return false;
 
     const rawContent = this.buildContent(record);
     if (!rawContent.trim()) return false;
@@ -60,21 +64,32 @@ export class MedicalRecordEmbeddingsService {
       this.userRepo.findOne({ where: { id: record.doctorId } }),
     ]);
     const knownNames: string[] = [];
+    if (!doctor || doctor.role !== 'doctor' || doctor.isLocked || !patient || patient.isLocked) return false;
     if (patient?.fullName) knownNames.push(patient.fullName);
     if (doctor?.fullName) knownNames.push(doctor.fullName);
 
     const content = this.anonymize.scrub(rawContent, knownNames);
     if (!content.trim()) return false;
 
-    const { embedding } = await this.openai.embed({
-      feature: 'embed-medical-record',
-      text: content.slice(0, 8000),
-      metadata: { recordId },
-    });
+    if (!await this.policy.claimEmbedding(record.id, record.version)) return false;
+    await this.policy.authorize(record.doctorId, [record.patientId]);
+    let embedding: number[];
+    try {
+      ({ embedding } = await this.openai.embed({
+        feature: 'embed-medical-record', text: content.slice(0, 8000),
+        userId: record.doctorId, metadata: { recordId, version: record.version },
+      }));
+    } catch (error) {
+      await this.dataSource.query("UPDATE medical_records SET embedding_status='failed' WHERE id=$1 AND version=$2", [record.id, record.version]);
+      throw error;
+    }
     if (!embedding.length) return false;
 
     const literal = `[${embedding.join(',')}]`;
-    await this.dataSource.query(
+    return this.dataSource.transaction(async em => {
+      const current = await em.query('SELECT version FROM medical_records WHERE id=$1 FOR UPDATE', [record.id]);
+      if (!current.length || current[0].version !== record.version) return false;
+      await em.query(
       `
       INSERT INTO medical_record_embeddings
         (record_id, doctor_id, patient_id, content_anonymized, embedding, updated_at)
@@ -88,38 +103,42 @@ export class MedicalRecordEmbeddingsService {
       `,
       [record.id, record.doctorId, record.patientId, content, literal],
     );
-
-    return true;
+      await em.query("UPDATE medical_records SET embedding_status='ready' WHERE id=$1 AND version=$2", [record.id, record.version]);
+      return true;
+    });
   }
 
   /**
    * Embed mọi record CHƯA CÓ row trong medical_record_embeddings hoặc record đã update sau lần embed.
    * Tham số `forceAll` = true → re-embed toàn bộ (vd khi đổi model embedding).
    */
-  async backfill(opts: { forceAll?: boolean; limit?: number } = {}): Promise<{
+  async backfill(opts: { doctorId: string; forceAll?: boolean; limit?: number }): Promise<{
     processed: number;
     succeeded: number;
     failed: number;
     skipped: number;
   }> {
+    if (!opts.doctorId) throw new BadRequestException('Thiếu bác sĩ xử lý hồ sơ.');
+    const limit = opts.limit ?? 50;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new BadRequestException('Batch phải từ 1 đến 100 hồ sơ.');
     if (!this.openai.isConfigured()) {
       this.logger.warn('OPENAI_API_KEY chưa cấu hình — bỏ qua backfill embeddings.');
       return { processed: 0, succeeded: 0, failed: 0, skipped: 0 };
     }
 
-    const limit = opts.limit ?? 1000;
+    if (!await this.policy.allows(opts.doctorId)) return { processed: 0, succeeded: 0, failed: 0, skipped: 0 };
     const rows = (await this.dataSource.query(
       opts.forceAll
-        ? `SELECT id FROM medical_records ORDER BY created_at ASC LIMIT $1`
+        ? `SELECT id FROM medical_records WHERE doctor_id=$2 ORDER BY created_at ASC LIMIT $1`
         : `
           SELECT mr.id
           FROM medical_records mr
           LEFT JOIN medical_record_embeddings e ON e.record_id = mr.id
-          WHERE e.record_id IS NULL
+          WHERE mr.doctor_id=$2 AND (e.record_id IS NULL OR mr.embedding_status<>'ready' OR e.updated_at<mr.updated_at)
           ORDER BY mr.created_at ASC
           LIMIT $1
         `,
-      [limit],
+      [limit, opts.doctorId],
     )) as { id: string }[];
 
     let succeeded = 0;
@@ -133,7 +152,7 @@ export class MedicalRecordEmbeddingsService {
       } catch (e) {
         failed++;
         this.logger.warn(
-          `Embed record ${r.id} lỗi: ${e instanceof Error ? e.message : e}`,
+          `Embed record ${r.id} thất bại; có thể thử lại trong hàng đợi.`,
         );
       }
     }
@@ -150,6 +169,20 @@ export class MedicalRecordEmbeddingsService {
       `DELETE FROM medical_record_embeddings WHERE record_id = $1`,
       [recordId],
     );
+  }
+
+  @Cron('0 */5 * * * *', { name: 'medical-embedding-retry' })
+  async retryPending(): Promise<void> {
+    if (!this.openai.isConfigured() || !(await this.policy.status()).enabled) return;
+    const rows = await this.dataSource.query(`SELECT mr.id FROM medical_records mr
+      JOIN users d ON d.id=mr.doctor_id AND d.role='doctor' AND d.is_locked=false
+      JOIN users p ON p.id=mr.patient_id AND p.is_locked=false
+      JOIN ai_consents dc ON dc.user_id=d.id AND dc.revoked_at IS NULL AND dc.policy_version=$1
+      JOIN ai_consents pc ON pc.user_id=p.id AND pc.revoked_at IS NULL AND pc.policy_version=$1
+      WHERE mr.embedding_status IN ('pending','failed') ORDER BY mr.updated_at ASC LIMIT 20`, [AI_POLICY_VERSION]);
+    for (const row of rows) {
+      try { await this.embedRecord(row.id); } catch { this.logger.warn('Tác vụ embedding chưa hoàn tất; sẽ thử lại trong đợt sau.'); }
+    }
   }
 
   /**
@@ -186,12 +219,17 @@ export class MedicalRecordEmbeddingsService {
       LEFT JOIN appointments a ON a.id = mr.appointment_id
       LEFT JOIN appointment_slots s ON s.id = a.slot_id
       WHERE e.doctor_id = $2
+        AND mr.embedding_status = 'ready' AND e.updated_at >= mr.updated_at
+        AND EXISTS (SELECT 1 FROM ai_consents c JOIN users p ON p.id=c.user_id
+          WHERE c.user_id=e.patient_id AND c.policy_version='${AI_POLICY_VERSION}' AND c.revoked_at IS NULL AND p.is_locked=false)
+        AND (e.embedding <=> $1::vector) <= ${patientId ? '$5' : '$4'}
         ${patientId ? 'AND e.patient_id = $4' : ''}
       ORDER BY e.embedding <=> $1::vector ASC
       LIMIT $3
     `;
     const params: unknown[] = [literal, doctorId, topK];
     if (patientId) params.push(patientId);
+    params.push(this.policy.ragMaxDistance());
 
     const rows = (await this.dataSource.query(sql, params)) as {
       record_id: string;
@@ -218,8 +256,8 @@ export class MedicalRecordEmbeddingsService {
       createdAt: new Date(r.created_at),
       appointmentId: r.appointment_id,
       slotTime: r.slot_time ? new Date(r.slot_time) : null,
-      // <=> trả 0..2 (cosine distance); similarity = 1 - distance/2 cho dễ hiểu.
-      similarity: Math.max(0, 1 - Number(r.distance) / 2),
+      // Cosine similarity = 1-distance; this is not a probability of correctness.
+      similarity: Math.max(0, Math.min(1, 1 - Number(r.distance))),
     }));
   }
 }

@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 import { createHash } from 'crypto';
 import { OpenAIService } from '../ai/openai.service';
 import { AnonymizeService } from '../ai/anonymize.service';
+import { AiPolicyService } from '../ai/ai-policy.service';
 import { DepartmentEntity } from '../models/department.model';
 import {
   AiSpecialtySuggestionEntity,
@@ -30,6 +31,7 @@ export class SpecialtySuggestService {
     private readonly deptRepo: Repository<DepartmentEntity>,
     @InjectRepository(AiSpecialtySuggestionEntity)
     private readonly cacheRepo: Repository<AiSpecialtySuggestionEntity>,
+    private readonly policy: AiPolicyService,
   ) {}
 
   /**
@@ -43,6 +45,9 @@ export class SpecialtySuggestService {
     rawSymptoms: string,
     userId: string | null,
   ): Promise<SpecialtySuggestionResponse> {
+    if (typeof rawSymptoms !== 'string') throw new BadRequestException('Triệu chứng phải là văn bản.');
+    if (!userId) throw new BadRequestException('Vui lòng đăng nhập trước khi dùng AI.');
+    if (!await this.policy.allows(userId)) throw new ServiceUnavailableException('AI đang tắt hoặc bạn chưa đồng ý chính sách xử lý dữ liệu.');
     if (!this.openai.isConfigured()) {
       throw new ServiceUnavailableException(
         'Hệ thống AI chưa cấu hình. Vui lòng liên hệ quản trị.',
@@ -97,7 +102,7 @@ export class SpecialtySuggestService {
         .insert()
         .values({
           symptomsHash: cacheKey,
-          symptomsSample: cleanSymptoms.slice(0, 500),
+          symptomsSample: '', // cache response/hash; do not retain free-text symptoms unnecessarily
           responseJson: validated,
           hits: 1,
         })
@@ -155,6 +160,7 @@ export class SpecialtySuggestService {
       'Tối đa 3 suggestions. Confidence "high" chỉ khi triệu chứng đặc trưng rõ ràng cho khoa đó.',
     ].join('\n');
 
+    await this.policy.authorize(userId!);
     const res = await this.openai.chat({
       feature: 'suggest-departments',
       systemPrompt,
@@ -169,7 +175,7 @@ export class SpecialtySuggestService {
     try {
       parsed = JSON.parse(res.text);
     } catch {
-      this.logger.warn(`LLM response không phải JSON hợp lệ: ${res.text.slice(0, 200)}`);
+      this.logger.warn('LLM response không phải JSON hợp lệ.');
       throw new ServiceUnavailableException(
         'AI trả về dữ liệu không đọc được. Vui lòng thử lại.',
       );

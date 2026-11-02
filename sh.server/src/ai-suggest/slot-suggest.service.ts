@@ -4,7 +4,9 @@ import { DataSource, Repository } from 'typeorm';
 import { UserEntity, type PreferredTimePattern } from '../models/user.model';
 import { OpenAIService } from '../ai/openai.service';
 import { AnonymizeService } from '../ai/anonymize.service';
+import { AiPolicyService } from '../ai/ai-policy.service';
 import { sqlSlotNotInLunchBreak } from '../common/doctor-slot-hours';
+import { isUuid } from '../common/is-uuid';
 
 /** Cửa sổ ngày tối đa cho gợi ý slot (để query không nặng). */
 const MAX_DAYS_AHEAD = 30;
@@ -51,6 +53,7 @@ export class SlotSuggestService {
     private readonly userRepo: Repository<UserEntity>,
     private readonly openai: OpenAIService,
     private readonly anonymize: AnonymizeService,
+    private readonly policy: AiPolicyService,
   ) {}
 
   async suggest(args: {
@@ -59,8 +62,9 @@ export class SlotSuggestService {
     symptoms?: string | null;
     daysAhead?: number;
   }): Promise<SlotSuggestionResult> {
-    const doctorId = args.doctorId?.trim();
-    if (!doctorId) throw new BadRequestException('Thiếu doctorId');
+    if (args.symptoms != null && (typeof args.symptoms !== 'string' || args.symptoms.length > 2000)) throw new BadRequestException('Triệu chứng tối đa 2000 ký tự.');
+    if (typeof args.doctorId !== 'string' || !isUuid(args.doctorId)) throw new BadRequestException('doctorId phải là UUID hợp lệ.');
+    const doctorId = args.doctorId.trim();
 
     const daysAhead = clamp(args.daysAhead ?? DEFAULT_DAYS_AHEAD, 1, MAX_DAYS_AHEAD);
 
@@ -74,7 +78,7 @@ export class SlotSuggestService {
     let urgent = false;
     let urgencyReason: string | null = null;
     if (symptoms) {
-      const urgency = await this.classifyUrgency(symptoms);
+      const urgency = await this.classifyUrgency(symptoms, args.userId);
       urgent = urgency.urgent;
       urgencyReason = urgency.reason;
     }
@@ -285,9 +289,9 @@ export class SlotSuggestService {
    * Có cache đơn giản theo lượt — không persist, vì symptom đa dạng và rẻ ($0.0001/lượt).
    */
   private async classifyUrgency(
-    symptoms: string,
+    symptoms: string, userId: string,
   ): Promise<{ urgent: boolean; reason: string | null }> {
-    if (!this.openai.isConfigured()) {
+    if (!this.openai.isConfigured() || !await this.policy.allows(userId)) {
       return { urgent: false, reason: null };
     }
     const safe = this.anonymize.scrub(symptoms, []);
@@ -297,6 +301,7 @@ Trả về JSON đúng schema: {"urgent": boolean, "reason": string}.
 - urgent=false khi: đau đầu nhẹ, mệt mỏi, ho/sổ mũi nhẹ, kiểm tra định kỳ, tái khám.
 - reason: 1 câu ngắn tiếng Việt giải thích lý do (≤80 ký tự).`;
     try {
+      await this.policy.authorize(userId);
       const { text } = await this.openai.chat({
         feature: 'slot-suggest-urgency',
         systemPrompt: sys,

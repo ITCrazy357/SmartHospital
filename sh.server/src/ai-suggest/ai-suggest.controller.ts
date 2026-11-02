@@ -15,7 +15,7 @@ import { SlotSuggestService } from './slot-suggest.service';
 
 /**
  * Endpoints public-facing cho các tính năng AI gợi ý dành cho bệnh nhân.
- *  - /suggest-departments: public (guest dùng được).
+ *  - /suggest-departments: đăng nhập + đồng ý xử lý dữ liệu AI.
  *  - /suggest-slots: cần đăng nhập (role=user) vì cần history pattern cá nhân.
  */
 @Controller('ai')
@@ -26,8 +26,10 @@ export class AiSuggestController {
   ) {}
 
   @Post('suggest-departments')
-  async suggestDepartments(@Body() body: { symptoms?: string } = {}) {
-    return this.specialty.suggest(body?.symptoms ?? '', null);
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('user')
+  async suggestDepartments(@CurrentUser() user: UserPublic, @Body() body: { symptoms?: string } = {}) {
+    return this.specialty.suggest(body?.symptoms ?? '', user.id);
   }
 
   @Post('suggest-slots')

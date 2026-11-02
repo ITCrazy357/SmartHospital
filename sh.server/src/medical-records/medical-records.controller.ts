@@ -36,8 +36,9 @@ export class MedicalRecordsController {
    * RAG chỉ tìm trong record của mình nên tự bảo vệ. Trả về số lượng đã xử lý.
    */
   @Post('me/backfill-embeddings')
-  backfillEmbeddings(@Body() body: { forceAll?: boolean; limit?: number } | undefined) {
+  backfillEmbeddings(@CurrentUser() user: UserPublic, @Body() body: { forceAll?: boolean; limit?: number } | undefined) {
     return this.embeddings.backfill({
+      doctorId: user.id,
       forceAll: body?.forceAll === true,
       limit: typeof body?.limit === 'number' ? body!.limit : undefined,
     });
@@ -80,6 +81,11 @@ export class MedicalRecordsController {
     return this.medicalRecords.getMyRecordById(user.id, recordId);
   }
 
+  @Get('me/records/:recordId/revisions')
+  revisions(@CurrentUser() user:UserPublic,@Param('recordId',ParseUUIDPipe) recordId:string){
+    return this.medicalRecords.revisionsForDoctor(user.id,recordId);
+  }
+
   /** Thống kê bệnh án của bác sĩ trong khoảng [from, to] (mặc định 30 ngày). */
   @Get('me/stats')
   statsForMe(
@@ -97,6 +103,8 @@ export class MedicalRecordsController {
     @Param('recordId', ParseUUIDPipe) recordId: string,
     @Body()
     body: {
+      version?: number;
+      reason?: string;
       symptoms?: string | null;
       diagnosis?: string | null;
       treatment?: string | null;
