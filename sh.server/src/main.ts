@@ -5,6 +5,7 @@ import { join } from 'path';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
+import { RequestValidationPipe } from './common/request-validation.pipe';
 
 async function bootstrap() {
   const uploadPath = join(process.cwd(), 'upload');
@@ -14,6 +15,11 @@ async function bootstrap() {
   }
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.useGlobalPipes(new RequestValidationPipe());
+  const proxyHops = Number(process.env.TRUST_PROXY_HOPS ?? '0');
+  if (!Number.isInteger(proxyHops) || proxyHops < 0 || proxyHops > 5)
+    throw new Error('TRUST_PROXY_HOPS phải là số nguyên từ 0 đến 5');
+  app.set('trust proxy', proxyHops);
 
   app.useStaticAssets(uploadPath, {
     prefix: '/upload/',
