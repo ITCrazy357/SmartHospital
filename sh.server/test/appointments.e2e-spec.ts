@@ -136,4 +136,32 @@ integration('appointment transactions against disposable PostgreSQL',()=>{
     await expect(service.purgeOrphanPastAvailableSlots()).resolves.toBe(0);
     expect((await ds.query('SELECT id FROM appointment_slots WHERE id=$1',[past]))).toHaveLength(1);
   });
+  it('resumes the original pending checkout after a provider failure without creating a second payment',async()=>{
+    gateway.ensurePaymentLink.mockRejectedValueOnce(new Error('Fixture provider timeout'));
+    await expect(book(p1,slot1)).rejects.toThrow('Chưa mở được thanh toán');
+    const reservation=(await ds.query('SELECT id FROM appointments WHERE user_id=$1',[p1]))[0];
+    const payment=(await ds.query('SELECT id,payos_order_code FROM payments WHERE appointment_id=$1',[reservation.id]))[0];
+    const resumed=await service.resumeCheckout(p1,reservation.id);
+    expect(resumed.appointment.id).toBe(reservation.id);
+    expect(resumed.payment.id).toBe(payment.id);
+    expect(Number(resumed.payment.payosOrderCode)).toBe(Number(payment.payos_order_code));
+    expect(resumed.checkoutUrl).toBe('https://pay.payos.vn/web/fixture');
+    expect((await ds.query('SELECT id FROM payments'))).toHaveLength(1);
+    expect(gateway.ensurePaymentLink).toHaveBeenCalledTimes(2);
+  });
+  it('does not expose or resume another patient checkout',async()=>{
+    const r=await book(p1,slot1);
+    await expect(service.resumeCheckout(p2,r.appointment.id)).rejects.toThrow('Không tìm thấy lịch khám');
+    expect(gateway.ensurePaymentLink).toHaveBeenCalledTimes(1);
+    expect((await ds.query('SELECT id FROM payments'))).toHaveLength(1);
+  });
+  it('does not resume an expired or cancelled checkout',async()=>{
+    const r=await book(p1,slot1);
+    await ds.query("UPDATE payments SET expires_at=now()-interval '1 minute' WHERE id=$1",[r.payment.id]);
+    await expect(service.resumeCheckout(p1,r.appointment.id)).rejects.toThrow('hết hạn');
+    await service.cancelByPatient(p1,r.appointment.id,'Fixture cancelled');
+    await expect(service.resumeCheckout(p1,r.appointment.id)).rejects.toThrow('không còn chờ');
+    expect(gateway.ensurePaymentLink).toHaveBeenCalledTimes(1);
+    expect((await ds.query('SELECT id FROM payments'))).toHaveLength(1);
+  });
 });
