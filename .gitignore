@@ -2,3 +2,6 @@
 *.dump
 *.backup
 *.sql.gz
+
+# Local browser verification artifacts use synthetic fixtures.
+/.verification/

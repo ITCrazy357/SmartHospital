@@ -1,4 +1,4 @@
-﻿import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -76,4 +76,3 @@ export class ClinicController {
   @Get('audit/:id')
   audit(@CurrentUser() actor: ClinicActor, @Param('id', ParseUUIDPipe) id: string) { return this.clinic.auditTrail(actor, id); }
 }
-
