@@ -63,6 +63,44 @@ describe('HTTP readiness and request validation boundary', () => {
     expect(query).not.toHaveBeenCalled();
     expect(redisReady).not.toHaveBeenCalled();
   });
+  describe('release identity', () => {
+    let previousRenderRevision: string | undefined;
+    let previousAppRevision: string | undefined;
+    beforeEach(() => {
+      previousRenderRevision = process.env.RENDER_GIT_COMMIT;
+      previousAppRevision = process.env.APP_REVISION;
+      delete process.env.RENDER_GIT_COMMIT;
+      delete process.env.APP_REVISION;
+      query.mockRejectedValue(new Error('unavailable fixture dependency'));
+      redisReady.mockResolvedValue(false);
+    });
+    afterEach(() => {
+      if (previousRenderRevision === undefined) delete process.env.RENDER_GIT_COMMIT;
+      else process.env.RENDER_GIT_COMMIT = previousRenderRevision;
+      if (previousAppRevision === undefined) delete process.env.APP_REVISION;
+      else process.env.APP_REVISION = previousAppRevision;
+    });
+    it.each([
+      [undefined, undefined, null],
+      ['A'.repeat(40), 'b'.repeat(40), 'a'.repeat(40)],
+      [undefined, 'b'.repeat(40), 'b'.repeat(40)],
+      ['malformed-private-fixture', 'b'.repeat(40), null],
+      ['', 'b'.repeat(40), null],
+      ['a'.repeat(39), undefined, null],
+      ['g'.repeat(40), undefined, null],
+      ['a'.repeat(40) + '\n', undefined, null],
+    ])('publishes only validated revision metadata (case %#)', async (renderRevision, appRevision, revision) => {
+      if (renderRevision !== undefined) process.env.RENDER_GIT_COMMIT = renderRevision;
+      if (appRevision !== undefined) process.env.APP_REVISION = appRevision;
+      await request(app.getHttpServer())
+        .get('/health/version')
+        .expect('Cache-Control', 'no-store')
+        .expect(200, { revision });
+      expect(query).not.toHaveBeenCalled();
+      expect(redisReady).not.toHaveBeenCalled();
+      expect(warnings).not.toHaveBeenCalled();
+    });
+  });
   it('marks an unavailable Redis dependency unready without exposing its connection details', async () => {
     redisReady.mockResolvedValue(false);
     const response = await request(app.getHttpServer()).get('/health/ready').expect(503);

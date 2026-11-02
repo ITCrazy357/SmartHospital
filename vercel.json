@@ -4,5 +4,9 @@
   "installCommand": "npm --prefix sh.client ci",
   "buildCommand": "npm --prefix sh.client run build:deploy",
   "outputDirectory": "sh.client/dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "headers": [{
+    "source": "/deployment.json",
+    "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+  }]
 }

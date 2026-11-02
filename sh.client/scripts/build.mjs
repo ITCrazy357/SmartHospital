@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { loadEnv } from 'vite';
 import { validateDeploymentEnv } from './deployment-env.mjs';
+import { writeDeploymentMetadata } from './deployment-metadata.mjs';
 
 const clientDirectory = fileURLToPath(new URL('../', import.meta.url));
 const deployment = process.argv.includes('--deployment') || process.env.VERCEL === '1';
@@ -30,3 +31,5 @@ for (const [entry, args] of [
   }
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
+
+writeDeploymentMetadata(fileURLToPath(new URL('../dist/', import.meta.url)), process.env);

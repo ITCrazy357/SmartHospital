@@ -1,4 +1,4 @@
-import { Controller, Get, Logger, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { Controller, Get, Header, Logger, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { readdirSync } from 'fs';
 import { join } from 'path';
@@ -14,6 +14,15 @@ export class HealthController {
   ) {}
   @Get('live') live() {
     return { status: 'ok' };
+  }
+  @Get('version')
+  @Header('Cache-Control', 'no-store')
+  version() {
+    const revision = process.env.RENDER_GIT_COMMIT ?? process.env.APP_REVISION;
+    return {
+      revision: typeof revision === 'string' && revision.length === 40 && /^[0-9a-f]{40}$/i.test(revision)
+        ? revision.toLowerCase() : null,
+    };
   }
   @Get('ready') async ready() {
     let stage = 'redis';
