@@ -35,8 +35,12 @@ URL before compiling. Both checked-in Vercel configurations use this stricter
 entry point; the same validation applies to `npm run build` when Vercel sets
 `VERCEL=1`.
 
-After deployment, verify the root page, static assets, and a direct URL such as
-`/login`. A Vercel deployment marked Ready proves the build completed; it does
+After deployment, verify the root page, static assets, and real application
+links such as `/?view=search`. The application currently selects screens using
+the `view` query parameter, not pathname routes. `/login` and
+`/patient/appointments` can check the server's SPA fallback only; HTTP 200 on
+those paths does not prove the login screen or patient workspace is rendered.
+A Vercel deployment marked Ready proves the build completed; it does
 not prove the backend is reachable or that login/clinical workflows work.
 Protected preview deployments may redirect anonymous checks to Vercel SSO.
 
@@ -98,13 +102,16 @@ Its public JavaScript referenced
 `https://smart-hospital-api-6y6v.onrender.com`, without the localhost API fallback.
 Direct `/login` and `/patient/appointments` requests returned HTTP 404 before
 the SPA rewrite configuration. After pushing that configuration, all three
-public routes returned HTTP 200 and the SPA shell. This was a routing defect
-even though earlier GitHub Actions and Vercel builds reported success.
+URLs returned HTTP 200 and the SPA shell. These pathname checks verify only
+fallback hosting: neither pathname is a defined application screen route.
 The backend returned `/health/live` 200 and `/health/ready` 503; the supplied
 Render logs confirm the missing schema described above. Deployment commands
 and Redis environment settings on the existing Render service have not been
 changed from this workspace. Authentication and clinical acceptance testing
 remain separate checks; no patient data was accessed for this baseline.
+The real `/?view=search` screen rendered its search field and filters in a
+browser without a JavaScript page error. The anonymous login dialog opened
+with email/password fields; no credentials were entered or submitted.
 
 Local verification after clean `npm ci`: 143 backend unit tests, 84 integration
 tests using real disposable PostgreSQL/Redis, 11 deployment/migration script
