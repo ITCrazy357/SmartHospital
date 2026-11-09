@@ -1,4 +1,8 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -54,9 +58,11 @@ export class OpenAIService {
     private readonly usageRepo: Repository<AiUsageEntity>,
   ) {
     const apiKey = this.config.get<string>('OPENAI_API_KEY')?.trim();
-    this.chatModel = this.config.get<string>('OPENAI_CHAT_MODEL')?.trim() || 'gpt-4o-mini';
+    this.chatModel =
+      this.config.get<string>('OPENAI_CHAT_MODEL')?.trim() || 'gpt-4o-mini';
     this.embeddingModel =
-      this.config.get<string>('OPENAI_EMBEDDING_MODEL')?.trim() || 'text-embedding-3-small';
+      this.config.get<string>('OPENAI_EMBEDDING_MODEL')?.trim() ||
+      'text-embedding-3-small';
 
     if (!apiKey) {
       this.logger.warn(
@@ -93,7 +99,8 @@ export class OpenAIService {
     const text = res.choices[0]?.message?.content ?? '';
     const promptTokens = res.usage?.prompt_tokens ?? 0;
     const completionTokens = res.usage?.completion_tokens ?? 0;
-    const totalTokens = res.usage?.total_tokens ?? promptTokens + completionTokens;
+    const totalTokens =
+      res.usage?.total_tokens ?? promptTokens + completionTokens;
 
     await this.logUsage({
       feature: input.feature,
@@ -109,7 +116,9 @@ export class OpenAIService {
   }
 
   /** Gọi embedding API; trả về vector + token usage. */
-  async embed(input: EmbeddingInput): Promise<{ embedding: number[]; promptTokens: number }> {
+  async embed(
+    input: EmbeddingInput,
+  ): Promise<{ embedding: number[]; promptTokens: number }> {
     if (!this.client) {
       throw new ServiceUnavailableException(
         'OpenAI API key chưa cấu hình ở server. Liên hệ admin.',
@@ -149,7 +158,9 @@ export class OpenAIService {
     try {
       const price = PRICE_PER_1M_USD[args.model] ?? { input: 0, output: 0 };
       const costUsd =
-        (args.promptTokens * price.input + args.completionTokens * price.output) / 1_000_000;
+        (args.promptTokens * price.input +
+          args.completionTokens * price.output) /
+        1_000_000;
 
       const row = this.usageRepo.create({
         feature: args.feature,
@@ -164,7 +175,9 @@ export class OpenAIService {
       await this.usageRepo.save(row);
     } catch (e) {
       // Không throw — log usage fail không ảnh hưởng request chính.
-      this.logger.warn(`Log ai_usage thất bại: ${e instanceof Error ? e.message : e}`);
+      this.logger.warn(
+        `Log ai_usage thất bại: ${e instanceof Error ? e.message : e}`,
+      );
     }
   }
 }
